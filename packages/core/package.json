@@ -1,0 +1,26 @@
+{
+  "name": "@raceforecaster/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Platform-neutral race planning engine: GPX, pacing, weather interpolation. No Node built-ins, so it runs unchanged in the browser, on the server, and in React Native.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "dev": "tsup --watch",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.5.1",
+    "tz-lookup": "^6.1.25"
+  }
+}

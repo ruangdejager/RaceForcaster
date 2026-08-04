@@ -1,0 +1,20 @@
+services:
+  raceforecaster:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      # Required. MET Norway's terms of service want an application name and a
+      # contact address; requests without one get a 403.
+      MET_USER_AGENT: ${MET_USER_AGENT:?set MET_USER_AGENT in .env, see .env.example}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8787}
+      MET_MAX_RPS: ${MET_MAX_RPS:-5}
+    volumes:
+      # Saved routes, share links and the forecast cache. Losing this only
+      # costs you your share links and a cold cache, but that's enough to want
+      # it to survive a redeploy.
+      - raceforecaster-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  raceforecaster-data:

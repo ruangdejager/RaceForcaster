@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@raceforecaster/core": ["../../packages/core/src/index.ts"]
+    }
+  },
+  // The core package is aliased to its source (see vite.config.ts) for hot
+  // reloading, so this program compiles core's files too — and therefore needs
+  // core's ambient module declarations in scope.
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "vite.config.ts",
+    "../../packages/core/src/*.d.ts"
+  ]
+}
