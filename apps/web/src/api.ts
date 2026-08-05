@@ -109,3 +109,74 @@ export function createShare(routeId: string, settings: PlanSettings): Promise<Sh
 export function loadShare(id: string): Promise<SharedPlan> {
   return request<SharedPlan>(`/api/shares/${encodeURIComponent(id)}`);
 }
+
+// --- Accounts --------------------------------------------------------------
+
+export interface AuthUser {
+  id: string;
+  username: string;
+}
+
+export function signup(username: string, password: string): Promise<{ user: AuthUser }> {
+  return request('/api/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function login(username: string, password: string): Promise<{ user: AuthUser }> {
+  return request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function logout(): Promise<{ ok: true }> {
+  return request('/api/auth/logout', { method: 'POST' });
+}
+
+export function fetchCurrentUser(): Promise<{ user: AuthUser | null }> {
+  return request('/api/auth/me');
+}
+
+// --- Saved routes ------------------------------------------------------------
+
+export interface SavedRoute {
+  id: string;
+  name: string;
+  isPublic: boolean;
+  createdAt: number;
+}
+
+export function fetchMyRoutes(): Promise<{ routes: SavedRoute[]; limit: number }> {
+  return request('/api/my/routes');
+}
+
+export function saveMyRoute(routeId: string, isPublic = true): Promise<{ ok: true }> {
+  return request('/api/my/routes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ routeId, isPublic }),
+  });
+}
+
+export function updateMyRoute(
+  routeId: string,
+  patch: { isPublic?: boolean; name?: string },
+): Promise<{ ok: true }> {
+  return request(`/api/my/routes/${encodeURIComponent(routeId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteMyRoute(routeId: string): Promise<{ ok: true }> {
+  return request(`/api/my/routes/${encodeURIComponent(routeId)}`, { method: 'DELETE' });
+}
+
+export function fetchRoute(routeId: string): Promise<{ route: Route }> {
+  return request(`/api/routes/${encodeURIComponent(routeId)}`);
+}

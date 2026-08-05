@@ -1,6 +1,8 @@
 import { buildRoute, RouteParseError, type Route } from '@raceforecaster/core';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
+import { currentUserId } from '../auth/session.js';
 import { MAX_UPLOAD_BYTES, type Config } from '../config.js';
 import type { Store } from '../db/index.js';
 import { MetError, type MetClient } from '../met/client.js';
@@ -13,9 +15,18 @@ export interface ApiDeps {
   met: MetClient;
 }
 
+/**
+ * A route that's missing and one that's private and not yours get the exact
+ * same message and status. Distinguishing them would confirm to a stranger
+ * that a given id refers to a real, private route — the whole point of
+ * "private" is that its existence isn't confirmable by guessing the link.
+ */
+class RouteAccessError extends Error {}
+
 /** Errors we recognise get a useful message and status; anything else is a 500. */
 function toHttpError(err: unknown): { status: 400 | 404 | 413 | 429 | 502 | 500; message: string } {
   if (err instanceof ValidationError) return { status: 400, message: err.message };
+  if (err instanceof RouteAccessError) return { status: 404, message: err.message };
   if (err instanceof RouteParseError) return { status: 400, message: err.message };
   if (err instanceof MetError) {
     return { status: err.status === 429 ? 429 : 502, message: err.message };
@@ -24,9 +35,19 @@ function toHttpError(err: unknown): { status: 400 | 404 | 413 | 429 | 502 | 500;
   return { status: 500, message: 'Something went wrong.' };
 }
 
-function loadRoute(store: Store, id: string): Route {
+/** Loads a route, enforcing that a private one is only readable by its owner. */
+function loadRoute(c: Context, store: Store, id: string): Route {
   const json = store.getRoute(id);
-  if (!json) throw new ValidationError(`No route with id "${id}". It may have been pruned.`);
+  const visibility = store.getRouteVisibility(id);
+  if (!json || !visibility) {
+    throw new RouteAccessError(`No route with id "${id}".`);
+  }
+  if (!visibility.isPublic) {
+    const userId = currentUserId(c, store);
+    if (!userId || userId !== visibility.ownerId) {
+      throw new RouteAccessError(`No route with id "${id}".`);
+    }
+  }
   return JSON.parse(json) as Route;
 }
 
@@ -80,7 +101,7 @@ export function createApi(deps: ApiDeps): Hono {
 
   api.get('/routes/:id', (c) => {
     try {
-      return c.json({ route: loadRoute(deps.store, c.req.param('id')) });
+      return c.json({ route: loadRoute(c, deps.store, c.req.param('id')) });
     } catch (err) {
       const { status, message } = toHttpError(err);
       return c.json({ error: message }, status);
@@ -93,7 +114,7 @@ export function createApi(deps: ApiDeps): Hono {
     try {
       const body = (await c.req.json()) as Record<string, unknown>;
       const routeId = String(body['routeId'] ?? '');
-      const route = loadRoute(deps.store, routeId);
+      const route = loadRoute(c, deps.store, routeId);
       const settings = parsePlanSettings(body, route);
 
       const bundle = await computePlan(route, settings, deps.met);
@@ -110,7 +131,7 @@ export function createApi(deps: ApiDeps): Hono {
     try {
       const body = (await c.req.json()) as Record<string, unknown>;
       const routeId = String(body['routeId'] ?? '');
-      const route = loadRoute(deps.store, routeId);
+      const route = loadRoute(c, deps.store, routeId);
       // Validate before saving, so a share link can never resolve to a plan
       // that won't compute.
       const settings = parsePlanSettings(body, route);
@@ -130,7 +151,7 @@ export function createApi(deps: ApiDeps): Hono {
       const share = deps.store.getShare(c.req.param('id'));
       if (!share) return c.json({ error: 'That share link no longer exists.' }, 404);
 
-      const route = loadRoute(deps.store, share.routeId);
+      const route = loadRoute(c, deps.store, share.routeId);
       const settings = parsePlanSettings(JSON.parse(share.settings), route);
       const bundle = await computePlan(route, settings, deps.met);
 

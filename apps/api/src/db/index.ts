@@ -55,7 +55,48 @@ CREATE TABLE IF NOT EXISTS sun_cache (
   sunset      INTEGER,
   expires_at  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  username      TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 `;
+
+/**
+ * Add columns an earlier version of the schema didn't have.
+ *
+ * `routes` predates accounts, and `CREATE TABLE IF NOT EXISTS` is a no-op
+ * against a database that already has the table — so a dev database created
+ * before this feature existed would otherwise be stuck without `owner_id` /
+ * `is_public` forever. This runs once at startup and is a no-op itself once
+ * the columns exist.
+ */
+function migrateRoutesTable(db: DatabaseSyncType): void {
+  const columns = db.prepare('PRAGMA table_info(routes)').all() as Array<{ name: string }>;
+  const have = new Set(columns.map((c) => c.name));
+
+  if (!have.has('owner_id')) {
+    db.exec('ALTER TABLE routes ADD COLUMN owner_id TEXT REFERENCES users(id) ON DELETE SET NULL');
+  }
+  if (!have.has('is_public')) {
+    // Existing routes predate any notion of privacy and were reachable by
+    // anyone with the link, same as a public route today — default keeps
+    // that behaviour rather than silently locking people out of old links.
+    db.exec('ALTER TABLE routes ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS routes_owner ON routes(owner_id)');
+}
 
 export interface CachedResponse {
   body: string;
@@ -70,6 +111,27 @@ export interface CachedSun {
   expiresAt: number;
 }
 
+export interface UserRow {
+  id: string;
+  username: string;
+  passwordHash: string;
+  createdAt: number;
+}
+
+export interface SessionRow {
+  id: string;
+  userId: string;
+  expiresAt: number;
+}
+
+export interface SavedRouteRow {
+  id: string;
+  name: string;
+  ownerId: string | null;
+  isPublic: boolean;
+  createdAt: number;
+}
+
 export class Store {
   private readonly db: DatabaseSyncType;
 
@@ -81,6 +143,7 @@ export class Store {
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec('PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
+    migrateRoutesTable(this.db);
   }
 
   close(): void {
@@ -89,9 +152,12 @@ export class Store {
 
   // --- Routes ------------------------------------------------------------
 
+  /** Upload always creates an unowned, public route — saving to an account is a separate step. */
   saveRoute(id: string, name: string, json: string): void {
     this.db
-      .prepare('INSERT OR REPLACE INTO routes (id, name, data, created_at) VALUES (?, ?, ?, ?)')
+      .prepare(
+        'INSERT OR REPLACE INTO routes (id, name, data, created_at, owner_id, is_public) VALUES (?, ?, ?, ?, NULL, 1)',
+      )
       .run(id, name, json, Date.now());
   }
 
@@ -100,6 +166,56 @@ export class Store {
       | { data: string }
       | undefined;
     return row?.data ?? null;
+  }
+
+  getRouteVisibility(id: string): { ownerId: string | null; isPublic: boolean } | null {
+    const row = this.db.prepare('SELECT owner_id, is_public FROM routes WHERE id = ?').get(id) as
+      | { owner_id: string | null; is_public: number }
+      | undefined;
+    return row ? { ownerId: row.owner_id, isPublic: row.is_public === 1 } : null;
+  }
+
+  countRoutesOwnedBy(userId: string): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM routes WHERE owner_id = ?').get(userId) as {
+      n: number;
+    };
+    return row.n;
+  }
+
+  /** Attach an already-uploaded route to an account. Caller enforces the 5-route cap. */
+  claimRoute(routeId: string, userId: string): void {
+    this.db.prepare('UPDATE routes SET owner_id = ? WHERE id = ?').run(userId, routeId);
+  }
+
+  setRouteVisibility(routeId: string, isPublic: boolean): void {
+    this.db.prepare('UPDATE routes SET is_public = ? WHERE id = ?').run(isPublic ? 1 : 0, routeId);
+  }
+
+  renameRoute(routeId: string, name: string): void {
+    this.db.prepare('UPDATE routes SET name = ? WHERE id = ?').run(name, routeId);
+  }
+
+  /** Release a route back to unowned rather than deleting it — existing share
+   *  links (and anyone who already has the URL) keep working either way, so
+   *  there's no data-loss reason to hard-delete, only an account-management one. */
+  releaseRoute(routeId: string, userId: string): boolean {
+    const result = this.db
+      .prepare('UPDATE routes SET owner_id = NULL WHERE id = ? AND owner_id = ?')
+      .run(routeId, userId);
+    return Number(result.changes ?? 0) > 0;
+  }
+
+  listRoutesOwnedBy(userId: string): SavedRouteRow[] {
+    const rows = this.db
+      .prepare('SELECT id, name, owner_id, is_public, created_at FROM routes WHERE owner_id = ? ORDER BY created_at DESC')
+      .all(userId) as Array<{ id: string; name: string; owner_id: string | null; is_public: number; created_at: number }>;
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      ownerId: r.owner_id,
+      isPublic: r.is_public === 1,
+      createdAt: r.created_at,
+    }));
   }
 
   // --- Shares ------------------------------------------------------------
@@ -120,6 +236,62 @@ export class Store {
       | { route_id: string; settings: string }
       | undefined;
     return row ? { routeId: row.route_id, settings: row.settings } : null;
+  }
+
+  // --- Users ---------------------------------------------------------------
+
+  createUser(id: string, username: string, passwordHash: string): void {
+    this.db
+      .prepare('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)')
+      .run(id, username, passwordHash, Date.now());
+  }
+
+  getUserByUsername(username: string): UserRow | null {
+    const row = this.db
+      .prepare('SELECT id, username, password_hash, created_at FROM users WHERE username = ? COLLATE NOCASE')
+      .get(username) as
+      | { id: string; username: string; password_hash: string; created_at: number }
+      | undefined;
+    return row
+      ? { id: row.id, username: row.username, passwordHash: row.password_hash, createdAt: row.created_at }
+      : null;
+  }
+
+  getUserById(id: string): UserRow | null {
+    const row = this.db
+      .prepare('SELECT id, username, password_hash, created_at FROM users WHERE id = ?')
+      .get(id) as { id: string; username: string; password_hash: string; created_at: number } | undefined;
+    return row
+      ? { id: row.id, username: row.username, passwordHash: row.password_hash, createdAt: row.created_at }
+      : null;
+  }
+
+  // --- Sessions --------------------------------------------------------------
+
+  createSession(id: string, userId: string, expiresAt: number): void {
+    this.db
+      .prepare('INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run(id, userId, Date.now(), expiresAt);
+  }
+
+  getSession(id: string): SessionRow | null {
+    const row = this.db.prepare('SELECT id, user_id, expires_at FROM sessions WHERE id = ?').get(id) as
+      | { id: string; user_id: string; expires_at: number }
+      | undefined;
+    if (!row) return null;
+    return { id: row.id, userId: row.user_id, expiresAt: row.expires_at };
+  }
+
+  deleteSession(id: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+  }
+
+  /** Drop expired cache rows and sessions. */
+  prune(): number {
+    const cutoff = Date.now() - 7 * 86_400_000;
+    const result = this.db.prepare('DELETE FROM weather_cache WHERE fetched_at < ?').run(cutoff);
+    this.db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
+    return Number(result.changes ?? 0);
   }
 
   // --- Weather cache -----------------------------------------------------
@@ -169,12 +341,5 @@ export class Store {
     this.db
       .prepare('INSERT OR REPLACE INTO sun_cache (key, sunrise, sunset, expires_at) VALUES (?, ?, ?, ?)')
       .run(key, entry.sunrise, entry.sunset, entry.expiresAt);
-  }
-
-  /** Drop expired cache rows. Sun times never change, so only weather ages out. */
-  prune(): number {
-    const cutoff = Date.now() - 7 * 86_400_000;
-    const result = this.db.prepare('DELETE FROM weather_cache WHERE fetched_at < ?').run(cutoff);
-    return Number(result.changes ?? 0);
   }
 }

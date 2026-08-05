@@ -10,6 +10,8 @@ import { loadConfig } from './config.js';
 import { Store } from './db/index.js';
 import { MetClient } from './met/client.js';
 import { createApi } from './routes/api.js';
+import { createAuthApi } from './routes/auth.js';
+import { createMyRoutesApi } from './routes/myRoutes.js';
 
 const config = loadConfig();
 const store = new Store(config.dbPath);
@@ -27,7 +29,14 @@ app.use('*', logger());
 // a fraction of that, which matters on a phone signal at a race start.
 app.use('*', compress());
 
+// Session cookies only make sense as Secure once the app is actually served
+// over HTTPS — forcing it in local dev would mean the browser silently drops
+// the cookie and login would appear to do nothing.
+const cookieSecure = config.publicBaseUrl.startsWith('https://');
+
 app.route('/api', createApi({ config, store, met }));
+app.route('/api/auth', createAuthApi({ store, cookieSecure }));
+app.route('/api/my/routes', createMyRoutesApi({ store }));
 
 // --- Static hosting -------------------------------------------------------
 // In development Vite serves the front end and proxies /api here, so this only

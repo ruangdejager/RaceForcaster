@@ -22,6 +22,8 @@ export interface PlannerState {
   route: Route | null;
   plan: RacePlan | null;
   settings: PlanSettings | null;
+  /** The forecast points the current plan was built from, for the station list. */
+  weather: WeatherSample[] | null;
   warnings: string[];
   error: string | null;
   /** True while a background forecast fetch is in flight. */
@@ -108,6 +110,22 @@ export function usePlanner() {
       setStatus('error');
     }
   }, []);
+
+  /** Open a route already known to the server, e.g. from "My routes". */
+  const openRouteById = useCallback(
+    async (routeId: string) => {
+      setStatus('loading');
+      setError(null);
+      try {
+        const result = await api.fetchRoute(routeId);
+        await loadRoute(result.route, []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not open that route.');
+        setStatus('error');
+      }
+    },
+    [loadRoute],
+  );
 
   const uploadFile = useCallback(
     async (file: File) => {
@@ -238,11 +256,21 @@ export function usePlanner() {
     return result.url;
   }, [route, settings]);
 
-  const state: PlannerState = { status, route, plan, settings, warnings, error, refreshing };
+  const state: PlannerState = {
+    status,
+    route,
+    plan,
+    settings,
+    weather,
+    warnings,
+    error,
+    refreshing,
+  };
 
   return {
     ...state,
     loadRoute,
+    openRouteById,
     uploadFile,
     openShare,
     reset,
