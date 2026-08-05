@@ -69,8 +69,15 @@ function buildCheckpoints(
     const hit = snapToTrack(points, wpt.lat, wpt.lon);
     if (!hit) continue;
     if (hit.offRouteM > MAX_SNAP_DISTANCE_M) {
+      // Several waypoints reporting the identical distance is the signature of
+      // an unplaced placeholder coordinate (commonly 0,0) rather than several
+      // genuinely distant points — surfacing the actual coordinate is what
+      // makes that diagnosable from the warning alone, instead of a rider
+      // having to guess why an otherwise-normal checkpoint got dropped.
       warnings.push(
-        `Skipped "${wpt.name}": it sits ${(hit.offRouteM / 1000).toFixed(1)} km off the route.`,
+        `Skipped "${wpt.name}": it sits ${(hit.offRouteM / 1000).toFixed(1)} km off the route ` +
+          `(at ${wpt.lat.toFixed(4)}, ${wpt.lon.toFixed(4)}). If several checkpoints show the same ` +
+          `distance, they likely share one unplaced coordinate in the source file.`,
       );
       continue;
     }

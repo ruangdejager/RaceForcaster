@@ -67,7 +67,7 @@ function FinishBanner({ plan }: { plan: RacePlan }): JSX.Element {
   return (
     <div className="finish-banner">
       <span className="finish-flag" aria-hidden="true">
-        🏁
+        FIN
       </span>
       <div>
         <div className="finish-label">Planned finish</div>

@@ -9,8 +9,8 @@ interface Props {
   plan: RacePlan;
 }
 
-const W = 700;
-const H = 132;
+const W = 900;
+const H = 240;
 const PAD = { top: 8, right: 8, bottom: 26, left: 8 };
 
 /**
@@ -88,11 +88,9 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
-          width="100%"
-          height={H}
           role="img"
           aria-label={`Elevation profile: ${km(route.totalDistance)} kilometres, ${Math.round(route.totalAscent)} metres of climbing`}
-          style={{ display: 'block', touchAction: 'pan-y' }}
+          style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'pan-y' }}
           {...handlers}
         >
           {darkBands.map((band) => (
@@ -181,6 +179,43 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
                 strokeWidth={1}
               />
               <circle cx={x(hovered.dist)} cy={y(hovered.ele)} r={4} fill={INK.accent} />
+
+              {/*
+                A floating readout right on the point, not just in the
+                caption below — "the mouse reflects the exact point" reads
+                literally: the number should sit where the cursor is, not
+                somewhere the eye has to jump to find it. Flips to the left
+                of the cursor past the chart's midpoint so it never runs off
+                the right edge.
+              */}
+              {(() => {
+                const px = x(hovered.dist);
+                const leftSide = px > W / 2;
+                const boxW = 108;
+                const boxX = leftSide ? px - boxW - 10 : px + 10;
+                const boxY = Math.max(PAD.top, y(hovered.ele) - 34);
+                return (
+                  <g>
+                    <rect
+                      x={boxX}
+                      y={boxY}
+                      width={boxW}
+                      height={26}
+                      rx={6}
+                      fill={INK.surface}
+                      stroke={INK.accent}
+                      strokeWidth={1}
+                      opacity={0.95}
+                    />
+                    <text x={boxX + 8} y={boxY + 11} fill={INK.label} fontSize={9.5}>
+                      {km(hovered.dist, 1)} km · {Math.round(hovered.ele)} m
+                    </text>
+                    <text x={boxX + 8} y={boxY + 22} fill="#cdd6e0" fontSize={10} fontWeight={600}>
+                      {clock(plan.timezone, hovered.time)}
+                    </text>
+                  </g>
+                );
+              })()}
             </g>
           )}
         </svg>

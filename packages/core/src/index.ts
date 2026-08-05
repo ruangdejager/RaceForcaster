@@ -73,6 +73,7 @@ export {
 export { resolveSeriesAt, weatherAt, type WeatherAtOptions } from './weather/interpolate.js';
 export { describeSymbol, type SkyCategory, type SymbolInfo } from './weather/symbol.js';
 export { chooseSampleLocations, roundCoord, type SampleLocation } from './weather/sampling.js';
+export { yrForecastUrl } from './weather/links.js';
 
 // Sun
 export {

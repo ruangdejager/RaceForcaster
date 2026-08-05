@@ -19,11 +19,15 @@ interface Props {
   color?: string;
 }
 
+// Matches the head/tailwind pair used everywhere else wind is coloured
+// (WindProfileChart's WIND_RESIST/WIND_PUSH): red against you, teal along.
+// Cross gets the app's secondary blue rather than amber, which is reserved
+// for the page's own accent and would otherwise compete with it here.
 const COLORS: Record<WindRelation, string> = {
-  head: '#ef7a7a',
-  tail: '#5fd08a',
-  left: '#e2b04a',
-  right: '#e2b04a',
+  head: '#e05a4e',
+  tail: '#199e70',
+  left: '#3987e5',
+  right: '#3987e5',
 };
 
 export function WindArrow({ windRelativeDeg, relation, size = 13, color }: Props): JSX.Element {

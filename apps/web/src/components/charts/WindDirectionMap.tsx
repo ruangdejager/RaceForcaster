@@ -90,11 +90,9 @@ export function WindDirectionMap({ plan }: Props): JSX.Element {
       <div className="chart-scroll">
         <svg
           viewBox={`0 0 ${W} ${H}`}
-          width="100%"
-          height={H}
           role="img"
           aria-label="Map of the route with arrows showing which way the wind blows at each point"
-          style={{ display: 'block' }}
+          style={{ display: 'block', width: '100%', height: 'auto' }}
         >
           <path
             d={linePath(geo.track)}
@@ -125,8 +123,18 @@ export function WindDirectionMap({ plan }: Props): JSX.Element {
                   strokeWidth={1.6}
                   strokeLinecap="round"
                 />
+                {/*
+                  Apex at (0,-7): the point furthest from the line's centre,
+                  in the direction the arrow is rotated to. Base corners sit
+                  back at y=0, coincident with the translate origin (the
+                  line's outward end). Getting this backward — apex nearer
+                  the origin than the base — draws every arrow pointing
+                  opposite the line it's attached to, which is what was
+                  happening before: the arrowhead read as the wind's origin
+                  rather than where it blows to.
+                */}
                 <path
-                  d={`M0 0 L-3 -5 L3 -5 Z`}
+                  d="M0 -7 L-3.2 0 L3.2 0 Z"
                   fill={SERIES.secondary}
                   transform={`translate(${x + dx / 2} ${y + dy / 2}) rotate(${toDeg})`}
                 />
@@ -145,7 +153,7 @@ export function WindDirectionMap({ plan }: Props): JSX.Element {
           {last && (
             <circle
               {...markerProps(geo.project(last.lat, last.lon))}
-              fill="#e66767"
+              fill="#e05a4e"
               stroke={INK.surface}
               strokeWidth={2}
             />
