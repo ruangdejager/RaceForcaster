@@ -92,11 +92,9 @@ export function SkyChart({ plan }: Props): JSX.Element {
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
-          width="100%"
-          height={H}
           role="img"
           aria-label={`Cloud cover and rainfall along the route. ${anyRain ? `About ${plan.summary.totalRainMm.toFixed(1)} millimetres of rain expected.` : 'No rain expected.'}`}
-          style={{ display: 'block', touchAction: 'pan-y' }}
+          style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'pan-y' }}
           {...handlers}
         >
           {/* --- Cloud panel --- */}

@@ -75,11 +75,9 @@ export function WindChart({ plan }: Props): JSX.Element {
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
-          width="100%"
-          height={H}
           role="img"
           aria-label={`Wind along the route: ${plan.summary.headwindHours.toFixed(1)} hours of headwind and ${plan.summary.tailwindHours.toFixed(1)} hours of tailwind`}
-          style={{ display: 'block', touchAction: 'pan-y' }}
+          style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'pan-y' }}
           {...handlers}
         >
           {ticks(geo.domain, 4).map((value) => (

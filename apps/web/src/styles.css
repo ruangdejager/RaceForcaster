@@ -1,39 +1,50 @@
 /*
- * RaceForecaster visual language.
+ * RaceForecaster visual language: "Cockpit".
  *
  * Built dark-first on purpose: this gets read at 4am in a bakkie at a race
- * start, and on a phone. Times are monospaced so a column of them lines up and
- * can be scanned rather than read. Checkpoints invert to a bright panel because
- * they are the landmarks a rider navigates the plan by.
+ * start, and on a phone. The whole app runs in monospace with tabular
+ * figures — an instrument-panel register rather than a friendly dashboard —
+ * because the thing being designed for is scanning a lot of numbers fast,
+ * not lingering. Sharp rectangular panels and hairline dividers instead of
+ * rounded cards; amber is the one accent doing real work, reserved for the
+ * primary data and the controls that act on it, with cockpit-red pulled in
+ * only for what's actively working against the rider (a headwind, an error).
+ *
+ * Palette validated with the project's dataviz palette checker against this
+ * exact card surface (#161d27): the three chart hues (amber `#c98500`, blue
+ * `#3987e5`, teal `#199e70`) clear the lightness band, chroma floor, CVD
+ * adjacency, and contrast checks even under the strict all-pairs mode used
+ * for scatter/small-multiple charts — see WindChart/TemperatureChart for
+ * where those three are actually used as data series.
  */
 
 :root {
-  --bg: #0e1419;
-  --bg-raised: #161d25;
-  --card: #1a222b;
-  --card-hover: #1f2832;
-  --border: #26313d;
+  --bg: #10151c;
+  --bg-raised: #161d27;
+  --card: #161d27;
+  --card-hover: #1c2632;
+  --border: #2a3542;
 
-  --text: #e8eef4;
-  --text-muted: #8d9aa8;
-  --text-dim: #5f6b78;
+  --text: #cdd6e0;
+  --text-muted: #8d99a8;
+  --text-dim: #6b7889;
 
-  --accent: #34c3f0;
-  --accent-strong: #17b1e8;
-  --accent-ink: #06232f;
+  --accent: #c98500;
+  --accent-strong: #e0a020;
+  --accent-ink: #1a1206;
 
-  --warm: #f5a623;
-  --cool: #6ec6ff;
-  --rain: #4b9fea;
-  --danger: #ef5f5f;
-  --night: #7b6bd6;
+  --warm: #c98500;
+  --cool: #3987e5;
+  --rain: #3987e5;
+  --danger: #e05a4e;
+  --night: #6b5bc0;
 
-  --radius: 14px;
-  --radius-sm: 9px;
-  --gap: 10px;
+  --radius: 3px;
+  --radius-sm: 2px;
+  --gap: 8px;
 
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sans: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
 
   color-scheme: dark;
 }
@@ -52,8 +63,9 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: 14.5px;
   line-height: 1.45;
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   /* Never let a wide chart push the whole page sideways. */
   overflow-x: hidden;
@@ -97,6 +109,7 @@ select {
       "head head"
       "controls controls"
       "profile profile"
+      "windprofile windprofile"
       "timeline charts";
     align-items: start;
     gap: 14px;
@@ -105,6 +118,7 @@ select {
   .app > .site-head { grid-area: head; }
   .app > .controls { grid-area: controls; }
   .app > .profile-block { grid-area: profile; }
+  .app > .wind-profile-block { grid-area: windprofile; }
   .app > .timeline { grid-area: timeline; }
   .app > .charts { grid-area: charts; position: sticky; top: 18px; }
 }
@@ -157,7 +171,7 @@ select {
 .link-button {
   background: none;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   padding: 5px 12px;
   font-size: 13px;
   color: var(--text-muted);
@@ -166,6 +180,203 @@ select {
 .link-button:hover {
   color: var(--text);
   border-color: var(--accent);
+}
+
+.site-head-account {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* --- Modals (auth, my routes) ------------------------------------------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 10, 14, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 20px;
+  width: 100%;
+  max-width: 340px;
+  max-height: 82vh;
+  overflow-y: auto;
+}
+
+.modal-wide {
+  max-width: 460px;
+}
+
+.modal-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  margin-bottom: 16px;
+}
+
+.modal-tabs button {
+  flex: 1;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 7px 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.modal-tabs button.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.modal-form input {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.modal-form input:focus-visible {
+  border-color: var(--accent);
+}
+
+.modal-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.modal-error {
+  font-size: 12.5px;
+  color: #ffb4b4;
+  background: rgba(239, 95, 95, 0.12);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin: 0;
+}
+
+.modal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal-count {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.my-routes-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.my-routes-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm);
+  padding: 4px 4px 4px 12px;
+}
+
+.my-routes-open {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 9px 0;
+  color: var(--text);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.my-routes-date {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.my-routes-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.visibility-toggle {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 5px 11px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.visibility-toggle.public {
+  background: rgba(52, 195, 240, 0.16);
+  color: var(--accent);
+}
+
+.visibility-toggle.private {
+  background: rgba(139, 148, 158, 0.16);
+  color: var(--text-muted);
+}
+
+.my-routes-remove {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.my-routes-remove:hover {
+  color: var(--danger);
 }
 
 /* --- Upload ------------------------------------------------------------ */
@@ -249,6 +460,27 @@ select {
   color: #ffc9c9;
 }
 
+.notice-dismissible {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.notice-dismiss {
+  flex: none;
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 17px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.notice-dismiss:hover {
+  color: var(--text);
+}
+
 /* --- Control bar ------------------------------------------------------- */
 
 .controls {
@@ -257,7 +489,7 @@ select {
   gap: 12px;
   padding: 12px;
   background: var(--card);
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
 }
 
 .speed-row {
@@ -340,32 +572,46 @@ select {
   font-size: 13px;
 }
 
-/* --- Summary chips ----------------------------------------------------- */
+/* --- Summary stat strip -------------------------------------------------
+ * A register of small instrument readouts, not a row of friendly pills:
+ * hairline-separated rectangular cells, a dim uppercase label over a bigger
+ * amber value. `stat-value-critical` breaks from the accent into the danger
+ * red for a reading actively working against the rider (rain, a headwind) —
+ * semantic colour kept deliberately separate from the accent hue itself.
+ */
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
 }
 
-.chip {
+.stat-tile {
   background: var(--bg-raised);
-  border-radius: var(--radius-sm);
-  padding: 7px 11px;
-  font-size: 13px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-label {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.stat-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
   white-space: nowrap;
 }
 
-.chip strong {
-  font-weight: 620;
-}
-
-.chip .chip-icon {
-  font-size: 13px;
-  line-height: 1;
+.stat-value-critical {
+  color: var(--danger);
 }
 
 /* --- Elevation profile ------------------------------------------------- */
@@ -373,7 +619,7 @@ select {
 .profile-block {
   padding: 12px;
   background: var(--card);
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
 }
 
 .profile-legend {
@@ -400,7 +646,7 @@ select {
 .timeline {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -409,13 +655,13 @@ select {
   grid-template-columns: 62px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  padding: 11px 13px;
+  padding: 9px 12px;
   background: var(--card);
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
 }
 
 .hour-card.dark-hour {
-  background: linear-gradient(90deg, rgba(123, 107, 214, 0.16), var(--card) 55%);
+  background: linear-gradient(90deg, rgba(107, 91, 192, 0.18), var(--card) 55%);
 }
 
 .hour-when {
@@ -497,20 +743,27 @@ select {
   padding: 0 4px;
 }
 
-/* --- Checkpoint card --------------------------------------------------- */
+/* --- Checkpoint card -----------------------------------------------------
+ * A flagged row, not an inverted block: tinted panel, amber border-stripe
+ * and amber name — the same "highlighted instrument row" convention as a
+ * cockpit MFD flags an active waypoint, rather than a friendly solid-colour
+ * card. Water-only stops get the cooler blue stripe instead of amber, so the
+ * two kinds of stop are visually distinct at a glance, not just by text.
+ */
 
 .cp-card {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-radius: var(--radius);
-  padding: 11px 13px;
+  background: #182230;
+  color: var(--text);
+  border-left: 3px solid var(--accent);
+  padding: 11px 13px 11px 11px;
   display: flex;
   flex-direction: column;
   gap: 7px;
 }
 
 .cp-card.cp-water {
-  background: #7fd4f5;
+  background: #16232f;
+  border-left-color: var(--cool);
 }
 
 .cp-head {
@@ -522,16 +775,21 @@ select {
 
 .cp-name {
   font-weight: 700;
-  font-size: 15.5px;
+  font-size: 15px;
+  color: var(--accent);
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
+.cp-card.cp-water .cp-name {
+  color: var(--cool);
+}
+
 .cp-name .diamond {
   flex: none;
-  opacity: 0.65;
+  opacity: 0.75;
 }
 
 .cp-name .text {
@@ -543,14 +801,14 @@ select {
 .cp-position {
   font-family: var(--mono);
   font-size: 12.5px;
-  opacity: 0.78;
+  color: var(--text-dim);
   white-space: nowrap;
   flex: none;
 }
 
 .cp-facilities {
   font-size: 12.5px;
-  opacity: 0.82;
+  color: var(--text-muted);
   line-height: 1.4;
 }
 
@@ -564,13 +822,14 @@ select {
 .cp-times .clock-run {
   font-family: var(--mono);
   font-size: 13.5px;
-  background: rgba(0, 0, 0, 0.13);
-  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
   padding: 5px 9px;
 }
 
 .cp-times .clock-run b {
   font-weight: 700;
+  color: var(--text);
 }
 
 .cp-stop {
@@ -582,17 +841,16 @@ select {
 
 .cp-stop .stop-label {
   font-size: 12px;
-  opacity: 0.75;
+  color: var(--text-dim);
 }
 
 .cp-stop button {
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 8px;
-  background: var(--accent-ink);
-  color: #fff;
-  font-size: 19px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--accent);
+  font-size: 18px;
   line-height: 1;
   display: grid;
   place-items: center;
@@ -609,6 +867,7 @@ select {
   font-weight: 700;
   min-width: 52px;
   text-align: center;
+  color: var(--text);
 }
 
 .cp-weather {
@@ -617,25 +876,31 @@ select {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  background: rgba(255, 255, 255, 0.22);
-  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   padding: 5px 9px;
 }
 
-/* --- Finish banner ----------------------------------------------------- */
+/* --- Finish banner ------------------------------------------------------- */
 
 .finish-banner {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 13px 15px;
-  border-radius: var(--radius);
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: #182230;
+  border-left: 3px solid var(--accent);
+  color: var(--text);
 }
 
 .finish-flag {
-  font-size: 22px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--accent-ink);
+  background: var(--accent);
+  padding: 4px 7px;
   line-height: 1;
 }
 
@@ -643,7 +908,7 @@ select {
   font-size: 10.5px;
   letter-spacing: 0.11em;
   text-transform: uppercase;
-  opacity: 0.72;
+  color: var(--text-dim);
   font-weight: 700;
 }
 
@@ -653,6 +918,7 @@ select {
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.02em;
+  color: var(--accent);
 }
 
 .finish-right {
@@ -678,17 +944,18 @@ select {
 
 .chart-card {
   background: var(--card);
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
   padding: 12px;
   min-width: 0;
 }
 
 .chart-card h3 {
   margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 11.5px;
+  font-weight: 700;
   color: var(--accent);
-  letter-spacing: 0.01em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .chart-scroll {
@@ -720,6 +987,65 @@ select {
   border-radius: 2px;
   margin-right: 5px;
   vertical-align: 3px;
+}
+
+/* --- Station list -------------------------------------------------------- */
+
+.station-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.station-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.station-row:last-child {
+  border-bottom: none;
+}
+
+.station-pos {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.station-pos strong {
+  font-family: var(--mono);
+}
+
+.station-cp {
+  color: var(--text-muted);
+}
+
+.station-links {
+  display: flex;
+  gap: 10px;
+  flex: none;
+}
+
+.station-links a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.station-links a:hover {
+  text-decoration: underline;
 }
 
 /* --- Footer ------------------------------------------------------------ */

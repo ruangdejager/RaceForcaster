@@ -71,11 +71,9 @@ export function TemperatureChart({ plan }: Props): JSX.Element {
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
-          width="100%"
-          height={H}
           role="img"
           aria-label={`Temperature along the route, ${plan.summary.minTemp.toFixed(1)} to ${plan.summary.maxTemp.toFixed(1)} degrees`}
-          style={{ display: 'block', touchAction: 'pan-y' }}
+          style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'pan-y' }}
           {...handlers}
         >
           {ticks(geo.domain, 4).map((value) => (

@@ -2,31 +2,76 @@
  * Shared plotting primitives.
  *
  * Series colours come from the reference data-visualisation palette's dark
- * steps, validated against this app's card surface (#1a222b): all three clear
- * the lightness band, the chroma floor, adjacent CVD separation (worst ΔE 9.4),
- * the normal-vision floor (26.5) and 3:1 contrast. Don't substitute a hue here
+ * steps, validated against this app's card surface (#161d27): amber, blue and
+ * teal all clear the lightness band, the chroma floor, CVD adjacency and 3:1
+ * contrast — checked with `--pairs all`, the stricter mode for scatter/small
+ * multiples, not just the adjacent-pair default. Don't substitute a hue here
  * without re-running that check — "looks different enough" is exactly the
- * judgement colour-vision deficiency defeats.
+ * judgement colour-vision deficiency defeats. Amber leads because it's the
+ * app's one accent doing real work; blue and teal are reserved for secondary
+ * series precisely so they never compete with it for attention.
  */
 
 export const SERIES = {
   /** Slot 1 — the primary measured quantity. */
-  primary: '#3987e5',
+  primary: '#c98500',
   /** Slot 2 — the derived or relative quantity plotted against it. */
-  secondary: '#d95926',
+  secondary: '#3987e5',
   /** Slot 3 — reserved for a third series. */
   tertiary: '#199e70',
 } as const;
 
 export const INK = {
-  grid: '#26313d',
-  axis: '#3a4653',
-  label: '#8d9aa8',
-  dim: '#5f6b78',
-  surface: '#1a222b',
-  night: '#7b6bd6',
-  accent: '#34c3f0',
+  grid: '#232d38',
+  axis: '#2a3542',
+  label: '#8d99a8',
+  dim: '#6b7889',
+  surface: '#161d27',
+  night: '#6b5bc0',
+  accent: '#c98500',
 } as const;
+
+/**
+ * The push/resist wind pair: teal for a tailwind (pushing you along), the
+ * same cockpit red as every other danger/critical reading for a headwind
+ * (pushing back). Deliberately not amber for the "push" pole — amber is
+ * already the page's one general-purpose accent, and reusing it here would
+ * make "this specifically means tailwind" indistinguishable from "this is
+ * just highlighted." This is a "how it feels" scale rather than the
+ * validated categorical palette above — it's encoding a single continuous
+ * quantity (how hard the wind is against or for you), not distinguishing
+ * series identity, so the usual CVD-adjacency requirement doesn't apply the
+ * same way. It still isn't color-alone: every chart that uses it pairs the
+ * fill with a numeric km/h readout.
+ */
+export const WIND_PUSH = '#199e70';
+export const WIND_RESIST = '#e05a4e';
+export const WIND_NEUTRAL = '#414d5a';
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const c = (v: number): string => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0');
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+/**
+ * Colour for a headwind component, `t` in m/s where positive opposes the
+ * rider and negative pushes them along. Zero sits at a muted neutral rather
+ * than either pole, so a calm stretch of road doesn't read as "a bit of
+ * tailwind" — `scale` is the magnitude (m/s) that should already be fully
+ * saturated, typically the strongest headwind on the route.
+ */
+export function windPushColor(headwindMs: number, scale: number): string {
+  const t = Math.max(-1, Math.min(1, headwindMs / Math.max(1, scale)));
+  const [nr, ng, nb] = hexToRgb(WIND_NEUTRAL);
+  const [pr, pg, pb] = t >= 0 ? hexToRgb(WIND_RESIST) : hexToRgb(WIND_PUSH);
+  const f = Math.abs(t);
+  return rgbToHex(nr + (pr - nr) * f, ng + (pg - ng) * f, nb + (pb - nb) * f);
+}
 
 export interface Scale {
   (value: number): number;

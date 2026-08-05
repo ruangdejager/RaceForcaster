@@ -91,40 +91,43 @@ export function ControlBar({
       </div>
 
       {summary && (
-        <div className="chips">
-          <Chip
-            icon="🏁"
-            label={`${dayClock(timezone, summary.finishTime)} finish`}
-            title={`${duration(summary.totalSeconds)} total, ${duration(summary.movingSeconds)} of it moving`}
+        <div className="stats">
+          <StatTile
+            label="Finish"
+            value={dayClock(timezone, summary.finishTime)}
+            title={`${duration(summary.movingSeconds)} moving, ${duration(summary.stoppedSeconds)} stopped`}
           />
-          <Chip
-            icon="🌡"
-            label={`${summary.minTemp.toFixed(1)}–${summary.maxTemp.toFixed(1)}°C temps`}
+          <StatTile
+            label="Total"
+            value={duration(summary.totalSeconds)}
+            title={`${duration(summary.movingSeconds)} moving + ${duration(summary.stoppedSeconds)} at checkpoints`}
+          />
+          <StatTile
+            label="Temp"
+            value={`${summary.minTemp.toFixed(1)}–${summary.maxTemp.toFixed(1)}°`}
             title={`Feels like ${summary.minApparentTemp.toFixed(1)}–${summary.maxApparentTemp.toFixed(1)}°C`}
           />
-          <Chip
-            icon="🌧"
-            label={summary.rainHours > 0 ? `${hours(summary.rainHours)} rain` : 'no rain'}
+          <StatTile
+            label="Rain"
+            value={summary.rainHours > 0 ? hours(summary.rainHours) : 'none'}
+            critical={summary.rainHours > 0}
             title={
               summary.totalRainMm > 0
                 ? `About ${summary.totalRainMm.toFixed(1)} mm falls while you're out`
                 : 'No rain forecast along the route'
             }
           />
-          <Chip
-            icon={summary.darkHours > 0 ? '🌙' : '☀'}
-            label={summary.darkHours > 0 ? `${hours(summary.darkHours)} dark` : 'all daylight'}
-          />
-          <Chip
-            icon="⏱"
-            label={`${stopLabel(summary.totalStopMinutes)} CP stops`}
+          <StatTile label="Dark" value={summary.darkHours > 0 ? hours(summary.darkHours) : 'none'} />
+          <StatTile
+            label="CP stops"
+            value={stopLabel(summary.totalStopMinutes)}
             title="Total planned time stationary at checkpoints"
           />
           {summary.headwindHours > 0.25 && (
-            <Chip icon="↓" label={`${hours(summary.headwindHours)} headwind`} />
+            <StatTile label="Headwind" value={hours(summary.headwindHours)} critical />
           )}
           {summary.tailwindHours > 0.25 && (
-            <Chip icon="↑" label={`${hours(summary.tailwindHours)} tailwind`} />
+            <StatTile label="Tailwind" value={hours(summary.tailwindHours)} />
           )}
         </div>
       )}
@@ -132,21 +135,21 @@ export function ControlBar({
   );
 }
 
-function Chip({
-  icon,
+function StatTile({
   label,
+  value,
   title,
+  critical,
 }: {
-  icon: string;
   label: string;
+  value: string;
   title?: string;
+  critical?: boolean;
 }): JSX.Element {
   return (
-    <span className="chip" title={title}>
-      <span className="chip-icon" aria-hidden="true">
-        {icon}
-      </span>
-      <strong>{label}</strong>
-    </span>
+    <div className="stat-tile" title={title}>
+      <span className="stat-label">{label}</span>
+      <span className={critical ? 'stat-value stat-value-critical' : 'stat-value'}>{value}</span>
+    </div>
   );
 }
