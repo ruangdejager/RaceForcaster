@@ -10,6 +10,9 @@ rain lands, and which stretches you'll ride in the dark. Every checkpoint gets a
 arrival time, its own forecast, and an editable stop.
 
 Weather comes from [MET Norway](https://www.met.no/) (the institute behind YR).
+Every point along the route the plan pulled a forecast for is also listed with a
+link out to that location's own page on YR, so you can check a number against the
+source yourself.
 
 ---
 
@@ -43,6 +46,17 @@ npm run dev
 The app is at <http://localhost:5173>. There's a sample 230 km route on the
 landing page if you don't have a GPX to hand.
 
+> **If the API never logs "listening"** on some Windows setups, three cold
+> toolchains (`tsup`, `tsx`, `vite`) starting at once under `concurrently` can
+> starve each other on disk I/O long enough that it looks hung rather than slow.
+> If that happens, run the three pieces in their own terminals instead — this
+> always works:
+> ```bash
+> npm run dev:api    # terminal 1
+> npm run dev:web    # terminal 2
+> npm run dev:core   # terminal 3, only needed while editing packages/core
+> ```
+
 ## Running it for real
 
 ```bash
@@ -54,6 +68,32 @@ single container. `MET_USER_AGENT` is read from your `.env`. Saved routes, share
 links and the forecast cache live in a named volume.
 
 Without Docker, `npm run build && npm start` does the same on port 8787.
+
+### Deploying to Railway
+
+The repo builds straight from `railway.toml` + `Dockerfile` — no extra config
+needed beyond environment variables and a volume:
+
+```bash
+npm install -g @railway/cli   # one-time
+railway login                 # opens a browser to authorise the CLI
+railway init                  # creates a new Railway project for this repo
+railway up                    # builds the Dockerfile and deploys
+```
+
+Then, in the Railway dashboard for the new service:
+
+1. **Variables** — set `MET_USER_AGENT` (required) and `PUBLIC_BASE_URL` to
+   the `*.up.railway.app` domain Railway assigns (Settings → Networking →
+   Generate Domain, then paste it back in as `PUBLIC_BASE_URL`). `PORT` is
+   supplied by Railway automatically — don't set it yourself.
+2. **Volume** — add one mounted at `/app/data`. Without it, every redeploy
+   wipes saved routes, share links, accounts, and the weather cache, since
+   SQLite lives on the container's local disk.
+
+`railway up` redeploys on demand; connecting the service to this GitHub repo
+in the dashboard instead gets you a deploy on every push, if you'd rather not
+run the command by hand each time.
 
 ---
 
@@ -138,6 +178,13 @@ the numbers deserve a caveat until race week, so each hour records which kind of
 data it came from and the UI says so — and stops saying so, by itself, once it
 stops being true.
 
+### The forecast-point list
+
+Every point the plan pulled a forecast from — not a real weather station, since
+met.no is a gridded model rather than a station network — is listed below the
+timeline with a link to that exact coordinate's own page on YR, so a number that
+looks off can be checked against the source directly.
+
 ---
 
 ## Layout
@@ -178,10 +225,42 @@ POST /api/plans          { routeId, startTime, targetSpeedKmh, … } → { plan,
 POST /api/shares         same body                                → { id, url }
 GET  /api/shares/:id                                              → { route, settings, plan, weather, sun }
 GET  /api/health
+
+POST /api/auth/signup    { username, password } → { user }, sets a session cookie
+POST /api/auth/login     { username, password } → { user }
+POST /api/auth/logout                           → clears the session
+GET  /api/auth/me                                → { user } or { user: null }
+
+GET    /api/my/routes           (logged in)      → { routes, limit }
+POST   /api/my/routes           { routeId, isPublic? }  claim an uploaded route into your account
+PATCH  /api/my/routes/:id       { isPublic?, name? }
+DELETE /api/my/routes/:id                        releases the route back to unowned, frees a slot
 ```
 
 `POST /api/plans` returns the raw forecast series alongside the computed plan,
 which is what lets the client take over and recompute locally.
+
+### Accounts
+
+Username and password only — no email, so there's no password-reset flow, and
+none is planned until there's an email channel to run one over. Passwords are
+hashed with Node's built-in `scrypt` (no bcrypt/argon2 dependency, matching the
+project's "nothing to install beyond Node" approach), and sessions are an
+HttpOnly cookie backed by a `sessions` row in SQLite — revocable server-side,
+unlike a JWT.
+
+Uploading a route has always persisted it (needed for the plan/share flow to
+work at all) and that hasn't changed — anyone can still upload and plan a route
+with no account. What an account adds is **claiming** one of those routes: up
+to 5 per account, each with a public/private toggle. Public is unchanged from
+today's behaviour (anyone with the link can open it); private means only the
+owner, logged in, can — enforced on every read path (`/routes/:id`, `/plans`,
+`/shares`), and a private route's id is indistinguishable from one that simply
+doesn't exist, so a guessed link can't even confirm a private route is there.
+
+The 5-route limit is on saved routes, not on plans: once a route is saved,
+speed, start time, and checkpoints stay freely adjustable by anyone who opens
+it — that's exactly how routes already worked before accounts existed.
 
 ## Development
 

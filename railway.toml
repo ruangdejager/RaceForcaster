@@ -1,0 +1,15 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# DATA_DIR (default /app/data, see Dockerfile) needs a persistent volume
+# mounted there in the Railway dashboard — Save/My-routes/share links and the
+# weather cache all live in the SQLite file under it, and a redeploy without
+# one wipes them. Volumes aren't expressible in this file; add one under the
+# service's Volumes tab, mount path /app/data.
