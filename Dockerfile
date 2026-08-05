@@ -31,7 +31,11 @@ RUN mkdir -p /app/data && chown -R node:node /app/data
 USER node
 
 EXPOSE 8787
-VOLUME ["/app/data"]
+# No VOLUME instruction here: Railway's builder rejects it outright ("use
+# Railway Volumes" instead), and it would be redundant anyway once a volume is
+# mounted at /app/data from the platform side — Docker's own local dev/compose
+# workflow gets its persistence from docker-compose.yml's own volumes: entry,
+# not from a Dockerfile VOLUME declaration.
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
