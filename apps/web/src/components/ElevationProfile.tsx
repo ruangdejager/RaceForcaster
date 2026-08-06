@@ -1,14 +1,17 @@
 import type { RacePlan, Route } from '@raceforecaster/core';
 import { useMemo } from 'react';
 import { clock, km } from '../format.js';
-import { areaPath, barPath, INK, linearScale, linePath, scrollToCheckpoint, SERIES } from './charts/plot.js';
+import { areaPath, INK, linearScale, linePath, pillPath, scrollToCheckpoint, SERIES } from './charts/plot.js';
 import { useCrosshair } from './charts/useCrosshair.js';
 
 /** How close the pointer has to be to a checkpoint's marker, in viewBox
  *  pixels, before the crosshair locks onto it instead of the terrain. */
 const SNAP_PX = 14;
 const CP_BAR_W = 7;
-const CP_BAR_H = 16;
+const CP_BAR_H = 32;
+/** Blue against the profile's own orange — the one colour on this chart
+ *  that isn't already spoken for, so a marker never blends into the fill. */
+const CP_COLOR = SERIES.secondary;
 
 interface Props {
   route: Route;
@@ -83,7 +86,6 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
     y: y(c.checkpoint.ele),
     name: c.checkpoint.name,
     dist: c.checkpoint.dist,
-    isWater: c.checkpoint.kind === 'water',
   }));
 
   const hoverXs = useMemo(() => plan.samples.map((s) => x(s.dist)), [plan.samples, x]);
@@ -161,49 +163,46 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
           ))}
 
           {/*
-            Checkpoints: a full-height hairline plus a small "candle" bar
-            standing on the profile at the checkpoint's own elevation —
-            amber for a checkpoint, blue for a water point, so the two read
-            apart without needing the label. Clicking or activating one
+            Checkpoints: a full-height hairline plus a small blue "candle"
+            marker centred on the profile at the checkpoint's own elevation —
+            the one colour on this chart that isn't already the terrain's
+            own orange, so it never blends in. Clicking or activating one
             (keyboard-focusable) jumps straight to its card in the timeline.
           */}
-          {checkpoints.map((cp) => {
-            const color = cp.isWater ? SERIES.secondary : INK.accent;
-            return (
-              <g
-                key={cp.id}
-                tabIndex={0}
-                role="button"
-                aria-label={`Jump to ${cp.name} in the timeline`}
-                onClick={() => scrollToCheckpoint(cp.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    scrollToCheckpoint(cp.id);
-                  }
-                }}
-                style={{ cursor: 'pointer', outline: 'none' }}
-              >
-                <line
-                  x1={cp.x}
-                  y1={PAD.top}
-                  x2={cp.x}
-                  y2={baseline}
-                  stroke={INK.label}
-                  strokeWidth={1}
-                  opacity={0.3}
-                />
-                {/* Generous invisible hit area — the bar itself is deliberately slim. */}
-                <rect x={cp.x - 12} y={PAD.top} width={24} height={baseline - PAD.top} fill="transparent" />
-                <path
-                  d={barPath(cp.x - CP_BAR_W / 2, cp.y - CP_BAR_H, CP_BAR_W, CP_BAR_H, 3)}
-                  fill={color}
-                  stroke={INK.surface}
-                  strokeWidth={1.2}
-                />
-              </g>
-            );
-          })}
+          {checkpoints.map((cp) => (
+            <g
+              key={cp.id}
+              tabIndex={0}
+              role="button"
+              aria-label={`Jump to ${cp.name} in the timeline`}
+              onClick={() => scrollToCheckpoint(cp.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  scrollToCheckpoint(cp.id);
+                }
+              }}
+              style={{ cursor: 'pointer', outline: 'none' }}
+            >
+              <line
+                x1={cp.x}
+                y1={PAD.top}
+                x2={cp.x}
+                y2={baseline}
+                stroke={INK.label}
+                strokeWidth={1}
+                opacity={0.3}
+              />
+              {/* Generous invisible hit area — the marker itself is deliberately slim. */}
+              <rect x={cp.x - 12} y={PAD.top} width={24} height={baseline - PAD.top} fill="transparent" />
+              <path
+                d={pillPath(cp.x, cp.y, CP_BAR_W, CP_BAR_H)}
+                fill={CP_COLOR}
+                stroke={INK.surface}
+                strokeWidth={1.2}
+              />
+            </g>
+          ))}
 
           <line
             x1={PAD.left}
@@ -242,7 +241,7 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
                 cx={snapped ? snapped.x : x(hovered.dist)}
                 cy={snapped ? snapped.y : y(hovered.ele)}
                 r={4}
-                fill={snapped ? (snapped.isWater ? SERIES.secondary : INK.accent) : INK.accent}
+                fill={snapped ? CP_COLOR : INK.accent}
               />
 
               {/*
@@ -307,10 +306,7 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
           <i className="swatch" style={{ background: INK.accent }} /> Elevation
         </span>
         <span>
-          <i className="swatch" style={{ background: INK.accent }} /> checkpoint
-        </span>
-        <span>
-          <i className="swatch" style={{ background: SERIES.secondary }} /> water point
+          <i className="swatch" style={{ background: SERIES.secondary }} /> checkpoint / water point
         </span>
         <span>hour marks move with your speed · click a marker to jump to it</span>
         {plan.darkSegments.length > 0 && (

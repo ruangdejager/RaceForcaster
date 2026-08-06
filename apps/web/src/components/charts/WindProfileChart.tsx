@@ -3,10 +3,10 @@ import { useMemo } from 'react';
 import { clock, km } from '../../format.js';
 import {
   areaPath,
-  barPath,
   INK,
   linearScale,
   linePath,
+  pillPath,
   scrollToCheckpoint,
   SERIES,
   WIND_PUSH,
@@ -32,7 +32,10 @@ const PAD = { top: 10, right: 10, left: 34 };
  *  pixels, before the crosshair locks onto it instead of the wind reading. */
 const SNAP_PX = 14;
 const CP_BAR_W = 7;
-const CP_BAR_H = 16;
+const CP_BAR_H = 32;
+/** Blue against the profile's own orange/gold wind gradient — the one
+ *  colour on this chart that isn't already spoken for. */
+const CP_COLOR = SERIES.secondary;
 
 const PROFILE_TOP = PAD.top;
 const PROFILE_BOTTOM = PROFILE_TOP + PROFILE_H;
@@ -117,7 +120,6 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
     y: y(c.checkpoint.ele),
     name: c.checkpoint.name,
     dist: c.checkpoint.dist,
-    isWater: c.checkpoint.kind === 'water',
   }));
 
   const stripArea = plan.samples.map((s): [number, number] => [x(s.dist), stripY(s.weather.headwindMs)]);
@@ -209,44 +211,42 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
             strokeLinejoin="round"
           />
 
-          {/* Same amber/blue "candle" markers as the elevation profile, and
-              the same click/keyboard jump to the checkpoint's timeline card. */}
-          {checkpointXs.map((cp) => {
-            const color = cp.isWater ? SERIES.secondary : INK.accent;
-            return (
-              <g
-                key={cp.id}
-                tabIndex={0}
-                role="button"
-                aria-label={`Jump to ${cp.name} in the timeline`}
-                onClick={() => scrollToCheckpoint(cp.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    scrollToCheckpoint(cp.id);
-                  }
-                }}
-                style={{ cursor: 'pointer', outline: 'none' }}
-              >
-                <line
-                  x1={cp.x}
-                  y1={PROFILE_TOP}
-                  x2={cp.x}
-                  y2={STRIP_BOTTOM}
-                  stroke={INK.label}
-                  strokeWidth={1}
-                  opacity={0.35}
-                />
-                <rect x={cp.x - 12} y={PROFILE_TOP} width={24} height={STRIP_BOTTOM - PROFILE_TOP} fill="transparent" />
-                <path
-                  d={barPath(cp.x - CP_BAR_W / 2, cp.y - CP_BAR_H, CP_BAR_W, CP_BAR_H, 3)}
-                  fill={color}
-                  stroke={INK.surface}
-                  strokeWidth={1.2}
-                />
-              </g>
-            );
-          })}
+          {/* Same blue "candle" markers as the elevation profile — the one
+              colour on this chart that isn't already the wind gradient —
+              and the same click/keyboard jump to the timeline card. */}
+          {checkpointXs.map((cp) => (
+            <g
+              key={cp.id}
+              tabIndex={0}
+              role="button"
+              aria-label={`Jump to ${cp.name} in the timeline`}
+              onClick={() => scrollToCheckpoint(cp.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  scrollToCheckpoint(cp.id);
+                }
+              }}
+              style={{ cursor: 'pointer', outline: 'none' }}
+            >
+              <line
+                x1={cp.x}
+                y1={PROFILE_TOP}
+                x2={cp.x}
+                y2={STRIP_BOTTOM}
+                stroke={INK.label}
+                strokeWidth={1}
+                opacity={0.35}
+              />
+              <rect x={cp.x - 12} y={PROFILE_TOP} width={24} height={STRIP_BOTTOM - PROFILE_TOP} fill="transparent" />
+              <path
+                d={pillPath(cp.x, cp.y, CP_BAR_W, CP_BAR_H)}
+                fill={CP_COLOR}
+                stroke={INK.surface}
+                strokeWidth={1.2}
+              />
+            </g>
+          ))}
 
           <text x={PAD.left} y={PROFILE_TOP + 12} fill={INK.dim} fontSize={10}>
             {Math.round(geo.maxEle)}m
@@ -319,7 +319,7 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
                 cy={snapped ? snapped.y : y(hovered.ele)}
                 r={4.5}
                 fill={INK.surface}
-                stroke={snapped ? (snapped.isWater ? SERIES.secondary : INK.accent) : INK.accent}
+                stroke={snapped ? CP_COLOR : INK.accent}
                 strokeWidth={2}
               />
               <circle
@@ -349,8 +349,8 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
       <p className="chart-note">
         The profile is painted with the wind at the hour you'll pass each point — gold pushes you
         along, red pushes back, deeper colour is stronger. The strip below is the same thing in
-        km/h. Amber bars are checkpoints, blue are water points — click one to jump to it below;
-        shaded bands are after dark.
+        km/h. Blue markers are checkpoints and water points — click one to jump to it below; shaded
+        bands are after dark.
       </p>
     </div>
   );

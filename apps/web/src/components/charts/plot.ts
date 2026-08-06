@@ -183,6 +183,30 @@ export function barPath(x: number, y: number, width: number, height: number, rad
   );
 }
 
+/**
+ * A capsule rounded equally at both ends, centred on `(cx, cy)` — the
+ * "candle" checkpoint marker. Symmetrical on purpose: unlike `barPath`
+ * (which sits on an axis), this marks a single point on a line, so nothing
+ * should read as more "up" than "down" from it.
+ */
+export function pillPath(cx: number, cy: number, width: number, height: number): string {
+  const h = Math.max(width, height);
+  const r = width / 2;
+  const x = cx - width / 2;
+  const yTop = cy - h / 2;
+  const yBottom = cy + h / 2;
+  return (
+    `M${x} ${yTop + r}` +
+    `Q${x} ${yTop} ${x + r} ${yTop}` +
+    `L${x + width - r} ${yTop}` +
+    `Q${x + width} ${yTop} ${x + width} ${yTop + r}` +
+    `L${x + width} ${yBottom - r}` +
+    `Q${x + width} ${yBottom} ${x + width - r} ${yBottom}` +
+    `L${x + r} ${yBottom}` +
+    `Q${x} ${yBottom} ${x} ${yBottom - r}Z`
+  );
+}
+
 /** DOM id for a checkpoint's card in the timeline — shared between the card
  *  itself and anything that wants to jump to it (the route/wind profile
  *  markers). Prefixed since a checkpoint id alone isn't a valid CSS id start. */
