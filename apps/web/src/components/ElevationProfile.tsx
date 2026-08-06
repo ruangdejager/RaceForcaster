@@ -1,7 +1,7 @@
 import type { RacePlan, Route } from '@raceforecaster/core';
 import { useMemo } from 'react';
 import { clock, km } from '../format.js';
-import { areaPath, INK, linearScale, linePath, pillPath, scrollToCheckpoint, SERIES } from './charts/plot.js';
+import { areaPath, INK, linearScale, linePath, paceColor, pillPath, scrollToCheckpoint, SERIES } from './charts/plot.js';
 import { useCrosshair } from './charts/useCrosshair.js';
 
 /** How close the pointer has to be to a checkpoint's marker, in viewBox
@@ -258,16 +258,17 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
                 const px = snapped ? snapped.x : x(hovered.dist);
                 const py = snapped ? snapped.y : y(hovered.ele);
                 const leftSide = px > W / 2;
-                const boxW = snapped ? Math.min(220, 24 + snapped.name.length * 6.2) : 108;
+                const boxW = snapped ? Math.min(220, 24 + snapped.name.length * 6.2) : 128;
+                const boxH = snapped ? 26 : 37;
                 const boxX = leftSide ? px - boxW - 10 : px + 10;
-                const boxY = Math.max(PAD.top, py - 34);
+                const boxY = Math.max(PAD.top, py - (boxH + 8));
                 return (
                   <g>
                     <rect
                       x={boxX}
                       y={boxY}
                       width={boxW}
-                      height={26}
+                      height={boxH}
                       rx={6}
                       fill={INK.surface}
                       stroke={INK.accent}
@@ -290,6 +291,25 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
                         </text>
                         <text x={boxX + 8} y={boxY + 22} fill="#cdd6e0" fontSize={10} fontWeight={600}>
                           {clock(plan.timezone, hovered.time)}
+                        </text>
+                        {/*
+                          Cumulative average pace up to this point, not the
+                          instantaneous speed — that's what answers "am I
+                          still on for the target given the terrain so far".
+                          Green when the terrain behind you has been kind
+                          enough to run ahead of the target, red when it's
+                          eaten into it, matching the wind chart's own
+                          push/resist colours for the same "helping or
+                          costing you time" idea.
+                        */}
+                        <text
+                          x={boxX + 8}
+                          y={boxY + 33}
+                          fill={paceColor(hovered.avgSpeedKmh, plan.settings.targetSpeedKmh)}
+                          fontSize={9.5}
+                          fontWeight={600}
+                        >
+                          {hovered.avgSpeedKmh.toFixed(1)} km/h avg so far
                         </text>
                       </>
                     )}
@@ -317,7 +337,10 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
         {hovered && (
           <span className="mono" style={{ marginLeft: 'auto', color: 'var(--text)' }}>
             {km(hovered.dist, 1)} km · {Math.round(hovered.ele)} m ·{' '}
-            {clock(plan.timezone, hovered.time)}
+            {clock(plan.timezone, hovered.time)} ·{' '}
+            <span style={{ color: paceColor(hovered.avgSpeedKmh, plan.settings.targetSpeedKmh) }}>
+              {hovered.avgSpeedKmh.toFixed(1)} km/h avg
+            </span>
           </span>
         )}
       </figcaption>

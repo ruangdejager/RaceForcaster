@@ -145,6 +145,25 @@ describe('buildPlan', () => {
     expect(plan.samples[plan.samples.length - 1]?.dist ?? 0).toBeCloseTo(route.totalDistance, -2);
   });
 
+  it('tracks average speed so far against the target, reflecting the terrain already covered', () => {
+    const plan = buildPlan({ route, settings: settings(), weatherSamples: makeWeather(), sunTimes });
+
+    // Nothing to average yet at the very start, so it reads as the target.
+    expect(plan.samples[0]?.avgSpeedKmh).toBeCloseTo(21, 5);
+
+    // The course climbs steadily for the first half (a sine hill), so the
+    // average speed covered so far should be running behind target there.
+    const midpoint = plan.samples.find(
+      (s) => s.dist > route.totalDistance * 0.45 && s.dist < route.totalDistance * 0.55,
+    );
+    expect(midpoint?.avgSpeedKmh ?? 0).toBeLessThan(21);
+
+    // Equal climb and descent even back out to the requested average by the
+    // finish — the same figure computePacing was asked to hit exactly.
+    const finish = plan.samples[plan.samples.length - 1];
+    expect(finish?.avgSpeedKmh ?? 0).toBeCloseTo(21, 0);
+  });
+
   it('calls a westerly a tailwind on an eastbound course', () => {
     const plan = buildPlan({ route, settings: settings(), weatherSamples: makeWeather(), sunTimes });
     expect(plan.summary.tailwindHours).toBeGreaterThan(plan.summary.headwindHours);

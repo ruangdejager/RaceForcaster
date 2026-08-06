@@ -6,6 +6,7 @@ import {
   INK,
   linearScale,
   linePath,
+  paceColor,
   pillPath,
   scrollToCheckpoint,
   SERIES,
@@ -160,7 +161,10 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
           <span className="mono" style={{ marginLeft: 'auto', color: 'var(--text)' }}>
             {km(hovered.dist, 1)} km · {clock(plan.timezone, hovered.time)} ·{' '}
             {hovered.weather.headwindMs >= 0 ? '+' : ''}
-            {(hovered.weather.headwindMs * 3.6).toFixed(1)} km/h
+            {(hovered.weather.headwindMs * 3.6).toFixed(1)} km/h ·{' '}
+            <span style={{ color: paceColor(hovered.avgSpeedKmh, plan.settings.targetSpeedKmh) }}>
+              {hovered.avgSpeedKmh.toFixed(1)} km/h avg
+            </span>
           </span>
         )}
       </div>

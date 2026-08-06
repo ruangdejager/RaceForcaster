@@ -48,6 +48,23 @@ export const WIND_PUSH = '#199e70';
 export const WIND_RESIST = '#e05a4e';
 export const WIND_NEUTRAL = '#414d5a';
 
+/** Below this gap from the target, "so far" pace reads as on-pace rather
+ *  than meaningfully ahead or behind — avoids a flickering colour right at
+ *  the start where rounding alone could tip it either way. */
+const PACE_NEUTRAL_BAND_KMH = 0.15;
+
+/**
+ * Colour for a cumulative average-speed-so-far reading against the target.
+ * Reuses the wind push/resist colours for the same "helping or costing you
+ * time" idea — green when the terrain already covered has run ahead of the
+ * target, red when it's eaten into it.
+ */
+export function paceColor(avgSpeedKmh: number, targetSpeedKmh: number): string {
+  const delta = avgSpeedKmh - targetSpeedKmh;
+  if (Math.abs(delta) < PACE_NEUTRAL_BAND_KMH) return INK.label;
+  return delta > 0 ? WIND_PUSH : WIND_RESIST;
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];

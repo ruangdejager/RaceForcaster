@@ -235,6 +235,14 @@ export interface PlanSample {
   grade: number;
   /** Instantaneous riding speed at this point, km/h. */
   speedKmh: number;
+  /**
+   * Average moving speed from the start up to this point, km/h — distance
+   * covered so far divided by moving time so far. Climb-heavy terrain early
+   * on pulls this below the target average; descent-heavy terrain pushes it
+   * above. Equals the target at the very start, where there's no distance to
+   * average yet.
+   */
+  avgSpeedKmh: number;
   weather: WeatherAt;
   isDark: boolean;
 }

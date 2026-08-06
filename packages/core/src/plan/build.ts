@@ -82,6 +82,14 @@ function sampleAt(ctx: SampleContext, time: number): PlanSample | null {
   });
   if (!weather) return null;
 
+  // Distance covered over moving time covered, both measured from the start
+  // — not the elapsed wall-clock average, which a checkpoint stop would drag
+  // down without that being a fact about the terrain. At dist 0 there's
+  // nothing to average yet, so it reads as the target rather than as 0.
+  const movingSecondsSoFar = movingSecondsAtDistance(ctx.route.points, ctx.movingSeconds, dist);
+  const avgSpeedKmh =
+    movingSecondsSoFar > 0 ? dist / 1000 / (movingSecondsSoFar / 3600) : ctx.settings.targetSpeedKmh;
+
   return {
     time,
     dist,
@@ -91,6 +99,7 @@ function sampleAt(ctx: SampleContext, time: number): PlanSample | null {
     bearing: point.bearing,
     grade: point.grade,
     speedKmh: msToKmh(speedMs),
+    avgSpeedKmh,
     weather,
     isDark: ctx.isDark(time),
   };
