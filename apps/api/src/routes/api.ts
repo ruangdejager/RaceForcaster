@@ -129,7 +129,10 @@ export function createApi(deps: ApiDeps): Hono {
     const json = deps.store.getRoute(routeId);
     if (!json) return c.json({ error: 'No default route is set yet.' }, 404);
 
-    return c.json({ route: JSON.parse(json) as Route });
+    const startTimeRaw = deps.store.getSetting('default_start_time');
+    const startTime = startTimeRaw ? Number(startTimeRaw) : undefined;
+
+    return c.json({ route: JSON.parse(json) as Route, startTime });
   });
 
   // --- Plan computation ----------------------------------------------------

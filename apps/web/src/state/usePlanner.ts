@@ -31,6 +31,8 @@ export interface PlannerState {
   error: string | null;
   /** True while a background forecast fetch is in flight. */
   refreshing: boolean;
+  /** True only for the site's unmodified default landing route. */
+  isDefaultRoute: boolean;
 }
 
 /**
@@ -56,6 +58,22 @@ function initialSettings(route: Route): PlanSettings {
   };
 }
 
+/**
+ * An admin can pin the default route's start time to a real race day. Once
+ * that day has passed, showing it as-is would put every visitor's plan in
+ * the past, so roll the calendar date forward to today while keeping the
+ * time-of-day the admin picked.
+ */
+function resolveDefaultStartTime(timezone: string, storedStartTime: number): number {
+  const todayPart = toLocalDateTimeInput(timezone, Date.now()).slice(0, 10);
+  const storedLocal = toLocalDateTimeInput(timezone, storedStartTime);
+  const storedDatePart = storedLocal.slice(0, 10);
+  if (storedDatePart >= todayPart) return storedStartTime;
+
+  const timePart = storedLocal.slice(11);
+  return parseLocalDateTime(`${todayPart}T${timePart}`, timezone) ?? defaultStartTime(timezone);
+}
+
 export function usePlanner() {
   const [status, setStatus] = useState<PlannerStatus>('empty');
   const [route, setRoute] = useState<Route | null>(null);
@@ -65,6 +83,10 @@ export function usePlanner() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  /** True only while showing the site's default landing route, unmodified by
+   *  a share link or the rider's own upload — used to hide the redundant
+   *  "Share" button, since the current URL already reproduces this view. */
+  const [isDefaultRoute, setIsDefaultRoute] = useState(false);
 
   // Guards against a slow response for an abandoned route overwriting a newer
   // one — someone uploading twice in quick succession.
@@ -89,9 +111,13 @@ export function usePlanner() {
   }, [route, settings, weather, sun]);
 
   /** Load a route and its first forecast. */
-  const loadRoute = useCallback(async (nextRoute: Route, nextWarnings: string[]) => {
+  const loadRoute = useCallback(
+    async (nextRoute: Route, nextWarnings: string[], startTimeOverride?: number) => {
     const seq = ++requestSeq.current;
-    const nextSettings = initialSettings(nextRoute);
+    const nextSettings = {
+      ...initialSettings(nextRoute),
+      ...(startTimeOverride !== undefined ? { startTime: startTimeOverride } : {}),
+    };
 
     setStatus('loading');
     setError(null);
@@ -112,7 +138,9 @@ export function usePlanner() {
       setError(err instanceof Error ? err.message : 'Could not fetch the forecast.');
       setStatus('error');
     }
-  }, []);
+    },
+    [],
+  );
 
   /**
    * The route the app lands on at "/" — everyone sees this first, privileged
@@ -125,7 +153,12 @@ export function usePlanner() {
     setError(null);
     try {
       const result = await api.fetchDefaultRoute();
-      await loadRoute(result.route, []);
+      const startTime =
+        result.startTime !== undefined
+          ? resolveDefaultStartTime(result.route.timezone, result.startTime)
+          : undefined;
+      await loadRoute(result.route, [], startTime);
+      setIsDefaultRoute(true);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setStatus('empty');
@@ -141,6 +174,7 @@ export function usePlanner() {
     async (routeId: string) => {
       setStatus('loading');
       setError(null);
+      setIsDefaultRoute(false);
       try {
         const result = await api.fetchRoute(routeId);
         await loadRoute(result.route, []);
@@ -156,6 +190,7 @@ export function usePlanner() {
     async (file: File) => {
       setStatus('loading');
       setError(null);
+      setIsDefaultRoute(false);
       try {
         const result = await api.uploadRoute(file);
         await loadRoute(result.route, result.warnings);
@@ -171,6 +206,7 @@ export function usePlanner() {
     const seq = ++requestSeq.current;
     setStatus('loading');
     setError(null);
+    setIsDefaultRoute(false);
     try {
       const shared = await api.loadShare(id);
       if (seq !== requestSeq.current) return;
@@ -196,6 +232,7 @@ export function usePlanner() {
     setSun(null);
     setWarnings([]);
     setError(null);
+    setIsDefaultRoute(false);
   }, []);
 
   // --- Settings mutations -------------------------------------------------
@@ -322,6 +359,7 @@ export function usePlanner() {
     warnings,
     error,
     refreshing,
+    isDefaultRoute,
   };
 
   return {

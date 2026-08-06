@@ -190,7 +190,7 @@ export function fetchRoute(routeId: string): Promise<{ route: Route }> {
 }
 
 /** The route the app lands on at "/" with no share link. */
-export function fetchDefaultRoute(): Promise<{ route: Route }> {
+export function fetchDefaultRoute(): Promise<{ route: Route; startTime?: number }> {
   return request('/api/default-route');
 }
 
@@ -215,10 +215,10 @@ export function setUserRole(userId: string, role: UserRole): Promise<{ ok: true 
   });
 }
 
-export function setDefaultRoute(routeId: string): Promise<{ ok: true }> {
+export function setDefaultRoute(routeId: string, startTime?: number): Promise<{ ok: true }> {
   return request('/api/admin/default-route', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ routeId }),
+    body: JSON.stringify({ routeId, startTime }),
   });
 }

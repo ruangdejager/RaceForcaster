@@ -7,7 +7,6 @@ import { ControlBar } from './components/ControlBar.jsx';
 import { ElevationProfile } from './components/ElevationProfile.jsx';
 import { ForecastNotice } from './components/ForecastNotice.jsx';
 import { MyRoutesPanel } from './components/MyRoutesPanel.jsx';
-import { StationList } from './components/StationList.jsx';
 import { PlanCharts } from './components/charts/PlanCharts.jsx';
 import { WindProfileChart } from './components/charts/WindProfileChart.jsx';
 import { Timeline } from './components/Timeline.jsx';
@@ -72,17 +71,17 @@ export function App(): JSX.Element {
   }, [route, auth.status]);
 
   const handleSetDefault = useCallback(async () => {
-    if (!route) return;
+    if (!route || !planner.settings) return;
     setDefaultState('working');
     try {
-      await setDefaultRoute(route.id);
+      await setDefaultRoute(route.id, planner.settings.startTime);
       setDefaultState('done');
       setTimeout(() => setDefaultState('idle'), 2600);
     } catch {
       setDefaultState('error');
       setTimeout(() => setDefaultState('idle'), 3200);
     }
-  }, [route]);
+  }, [route, planner]);
 
   const handleShare = useCallback(async () => {
     setShareState('working');
@@ -98,8 +97,12 @@ export function App(): JSX.Element {
     }
   }, [planner]);
 
-  const { status, plan, settings, weather, warnings, error, refreshing } = planner;
+  const { status, plan, settings, warnings, error, refreshing, isDefaultRoute } = planner;
   const busy = status === 'loading';
+  // The current URL already reproduces the unmodified default landing route,
+  // so a "Share" link is only useful once you're logged in (to build a route
+  // to hand off) or once you've moved past the default some other way.
+  const showShare = auth.status === 'authed' || !isDefaultRoute;
 
   // A skipped checkpoint almost always means one bad coordinate in the source
   // file (see the "Skipped ... 4442.1 km off the route" case — that number is
@@ -126,7 +129,7 @@ export function App(): JSX.Element {
             {route.name} · {km(route.totalDistance)} km · {Math.round(route.totalAscent)} m up
           </span>
         )}
-        {plan && (
+        {plan && showShare && (
           <button type="button" className="link-button" onClick={handleShare}>
             {shareState === 'working' && <span className="spinner" />}
             {shareState === 'idle' && 'Share'}
@@ -247,16 +250,20 @@ export function App(): JSX.Element {
       {plan && <ForecastNotice plan={plan} />}
 
       {plan && route && (
-        <>
+        <div className="timeline-block">
           <AddCheckpointForm totalDistanceM={route.totalDistance} onAdd={planner.addCheckpoint} />
           <Timeline
             plan={plan}
             onStopAdjust={planner.adjustStopMinutes}
             onCheckpointRemove={planner.removeCheckpoint}
           />
+        </div>
+      )}
+
+      {plan && (
+        <div className="charts-block">
           <PlanCharts plan={plan} />
-          {weather && <StationList weather={weather} route={route} />}
-        </>
+        </div>
       )}
 
       <footer className="site-foot">

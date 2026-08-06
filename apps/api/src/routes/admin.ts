@@ -60,6 +60,15 @@ export function createAdminApi(deps: AdminDeps): Hono<Env> {
     }
 
     deps.store.setSetting('default_route_id', routeId);
+
+    // Optional: fix the race day everyone lands on, e.g. the real event date.
+    // Read back on landing and bumped to today if it's slipped into the past
+    // (see resolveDefaultStartTime on the web side), so this never goes stale.
+    const startTime = body['startTime'];
+    if (typeof startTime === 'number' && Number.isFinite(startTime)) {
+      deps.store.setSetting('default_start_time', String(startTime));
+    }
+
     return c.json({ ok: true });
   });
 
