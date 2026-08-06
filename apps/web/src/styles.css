@@ -869,17 +869,18 @@ select {
 }
 
 /* --- Checkpoint card -----------------------------------------------------
- * A flagged row, not an inverted block: tinted panel, amber border-stripe
- * and amber name — the same "highlighted instrument row" convention as a
+ * A flagged row, not an inverted block: tinted panel, blue border-stripe
+ * and blue name — the same "highlighted instrument row" convention as a
  * cockpit MFD flags an active waypoint, rather than a friendly solid-colour
- * card. Water-only stops get the cooler blue stripe instead of amber, so the
- * two kinds of stop are visually distinct at a glance, not just by text.
+ * card. Checkpoint and water point share this colour (it matches the route
+ * profile's own marker colour) — the note/facility text is what tells them
+ * apart, not a colour code.
  */
 
 .cp-card {
   background: #182230;
   color: var(--text);
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--cool);
   padding: 11px 13px 11px 11px;
   display: flex;
   flex-direction: column;
@@ -888,7 +889,6 @@ select {
 
 .cp-card.cp-water {
   background: #16232f;
-  border-left-color: var(--cool);
 }
 
 .cp-head {
@@ -901,15 +901,11 @@ select {
 .cp-name {
   font-weight: 700;
   font-size: 15px;
-  color: var(--accent);
+  color: var(--cool);
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-
-.cp-card.cp-water .cp-name {
-  color: var(--cool);
 }
 
 .cp-name .diamond {

@@ -7,8 +7,8 @@ import { useCrosshair } from './charts/useCrosshair.js';
 /** How close the pointer has to be to a checkpoint's marker, in viewBox
  *  pixels, before the crosshair locks onto it instead of the terrain. */
 const SNAP_PX = 14;
-const CP_BAR_W = 7;
-const CP_BAR_H = 32;
+const CP_BAR_W = 1.75;
+const CP_BAR_H = 8;
 /** Blue against the profile's own orange — the one colour on this chart
  *  that isn't already spoken for, so a marker never blends into the fill. */
 const CP_COLOR = SERIES.secondary;

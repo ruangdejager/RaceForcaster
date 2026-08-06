@@ -31,8 +31,8 @@ const PAD = { top: 10, right: 10, left: 34 };
 /** How close the pointer has to be to a checkpoint's marker, in viewBox
  *  pixels, before the crosshair locks onto it instead of the wind reading. */
 const SNAP_PX = 14;
-const CP_BAR_W = 7;
-const CP_BAR_H = 32;
+const CP_BAR_W = 1.75;
+const CP_BAR_H = 8;
 /** Blue against the profile's own orange/gold wind gradient — the one
  *  colour on this chart that isn't already spoken for. */
 const CP_COLOR = SERIES.secondary;
