@@ -183,6 +183,20 @@ export function barPath(x: number, y: number, width: number, height: number, rad
   );
 }
 
+/** DOM id for a checkpoint's card in the timeline — shared between the card
+ *  itself and anything that wants to jump to it (the route/wind profile
+ *  markers). Prefixed since a checkpoint id alone isn't a valid CSS id start. */
+export function checkpointAnchorId(checkpointId: string): string {
+  return `cp-anchor-${checkpointId}`;
+}
+
+/** Scroll a checkpoint's timeline card into view, e.g. from a profile marker. */
+export function scrollToCheckpoint(checkpointId: string): void {
+  document
+    .getElementById(checkpointAnchorId(checkpointId))
+    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 /** Roughly `count` evenly spaced clock times across a span. */
 export function timeTicks(start: number, end: number, count = 5): number[] {
   const HOUR = 3_600_000;

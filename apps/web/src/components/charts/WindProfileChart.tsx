@@ -1,7 +1,18 @@
 import type { RacePlan, Route } from '@raceforecaster/core';
 import { useMemo } from 'react';
 import { clock, km } from '../../format.js';
-import { areaPath, INK, linearScale, linePath, WIND_PUSH, WIND_RESIST, windPushColor } from './plot.js';
+import {
+  areaPath,
+  barPath,
+  INK,
+  linearScale,
+  linePath,
+  scrollToCheckpoint,
+  SERIES,
+  WIND_PUSH,
+  WIND_RESIST,
+  windPushColor,
+} from './plot.js';
 import { useCrosshair } from './useCrosshair.js';
 
 interface Props {
@@ -16,6 +27,12 @@ const GAP = 6;
 const AXIS_H = 22;
 const H = PROFILE_H + GAP + STRIP_H + AXIS_H;
 const PAD = { top: 10, right: 10, left: 34 };
+
+/** How close the pointer has to be to a checkpoint's marker, in viewBox
+ *  pixels, before the crosshair locks onto it instead of the wind reading. */
+const SNAP_PX = 14;
+const CP_BAR_W = 7;
+const CP_BAR_H = 16;
 
 const PROFILE_TOP = PAD.top;
 const PROFILE_BOTTOM = PROFILE_TOP + PROFILE_H;
@@ -95,16 +112,35 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
   }));
 
   const checkpointXs = plan.checkpoints.map((c) => ({
+    id: c.checkpoint.id,
     x: x(c.checkpoint.dist),
     y: y(c.checkpoint.ele),
     name: c.checkpoint.name,
+    dist: c.checkpoint.dist,
+    isWater: c.checkpoint.kind === 'water',
   }));
 
   const stripArea = plan.samples.map((s): [number, number] => [x(s.dist), stripY(s.weather.headwindMs)]);
 
   const hoverXs = useMemo(() => plan.samples.map((s) => x(s.dist)), [plan.samples, x]);
-  const { svgRef, index, handlers } = useCrosshair(hoverXs);
+  const { svgRef, index, x: pointerX, handlers } = useCrosshair(hoverXs);
   const hovered = index !== null ? plan.samples[index] : null;
+
+  // See ElevationProfile for the rationale — checkpoints are hit-tested
+  // against the continuous pointer position, not the sample series.
+  const snapped = useMemo(() => {
+    if (pointerX === null) return null;
+    let best: (typeof checkpointXs)[number] | null = null;
+    let bestDelta = SNAP_PX;
+    for (const cp of checkpointXs) {
+      const delta = Math.abs(cp.x - pointerX);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = cp;
+      }
+    }
+    return best;
+  }, [pointerX, checkpointXs]);
 
   return (
     <div className="chart-card">
@@ -133,7 +169,14 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
           viewBox={`0 0 ${W} ${H}`}
           role="img"
           aria-label="Elevation profile painted with the wind you'll feel at each point, with a strip below showing it in km/h"
-          style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'pan-y' }}
+          style={{
+            display: 'block',
+            width: '100%',
+            height: 'auto',
+            touchAction: 'pan-y',
+            cursor: snapped ? 'pointer' : undefined,
+          }}
+          onClick={() => snapped && scrollToCheckpoint(snapped.id)}
           {...handlers}
         >
           <defs>
@@ -166,21 +209,44 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
             strokeLinejoin="round"
           />
 
-          {checkpointXs.map((cp) => (
-            <g key={cp.name}>
-              <line
-                x1={cp.x}
-                y1={PROFILE_TOP}
-                x2={cp.x}
-                y2={STRIP_BOTTOM}
-                stroke={INK.label}
-                strokeWidth={1}
-                opacity={0.35}
-              />
-              <circle cx={cp.x} cy={cp.y} r={4} fill={INK.surface} />
-              <circle cx={cp.x} cy={cp.y} r={2.6} fill={INK.accent} />
-            </g>
-          ))}
+          {/* Same amber/blue "candle" markers as the elevation profile, and
+              the same click/keyboard jump to the checkpoint's timeline card. */}
+          {checkpointXs.map((cp) => {
+            const color = cp.isWater ? SERIES.secondary : INK.accent;
+            return (
+              <g
+                key={cp.id}
+                tabIndex={0}
+                role="button"
+                aria-label={`Jump to ${cp.name} in the timeline`}
+                onClick={() => scrollToCheckpoint(cp.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    scrollToCheckpoint(cp.id);
+                  }
+                }}
+                style={{ cursor: 'pointer', outline: 'none' }}
+              >
+                <line
+                  x1={cp.x}
+                  y1={PROFILE_TOP}
+                  x2={cp.x}
+                  y2={STRIP_BOTTOM}
+                  stroke={INK.label}
+                  strokeWidth={1}
+                  opacity={0.35}
+                />
+                <rect x={cp.x - 12} y={PROFILE_TOP} width={24} height={STRIP_BOTTOM - PROFILE_TOP} fill="transparent" />
+                <path
+                  d={barPath(cp.x - CP_BAR_W / 2, cp.y - CP_BAR_H, CP_BAR_W, CP_BAR_H, 3)}
+                  fill={color}
+                  stroke={INK.surface}
+                  strokeWidth={1.2}
+                />
+              </g>
+            );
+          })}
 
           <text x={PAD.left} y={PROFILE_TOP + 12} fill={INK.dim} fontSize={10}>
             {Math.round(geo.maxEle)}m
@@ -241,22 +307,40 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
           {hovered && (
             <g pointerEvents="none">
               <line
-                x1={x(hovered.dist)}
+                x1={snapped ? snapped.x : x(hovered.dist)}
                 y1={PROFILE_TOP}
-                x2={x(hovered.dist)}
+                x2={snapped ? snapped.x : x(hovered.dist)}
                 y2={STRIP_BOTTOM}
                 stroke={INK.label}
                 strokeWidth={1}
               />
-              <circle cx={x(hovered.dist)} cy={y(hovered.ele)} r={4.5} fill={INK.surface} stroke={INK.accent} strokeWidth={2} />
               <circle
-                cx={x(hovered.dist)}
+                cx={snapped ? snapped.x : x(hovered.dist)}
+                cy={snapped ? snapped.y : y(hovered.ele)}
+                r={4.5}
+                fill={INK.surface}
+                stroke={snapped ? (snapped.isWater ? SERIES.secondary : INK.accent) : INK.accent}
+                strokeWidth={2}
+              />
+              <circle
+                cx={snapped ? snapped.x : x(hovered.dist)}
                 cy={stripY(hovered.weather.headwindMs)}
                 r={3.5}
                 fill={INK.surface}
                 stroke={INK.accent}
                 strokeWidth={2}
               />
+              {snapped && (
+                <text
+                  x={snapped.x}
+                  y={PROFILE_TOP - 2}
+                  fill={INK.label}
+                  fontSize={9.5}
+                  textAnchor={snapped.x > W / 2 ? 'end' : 'start'}
+                >
+                  {snapped.name} · click to view
+                </text>
+              )}
             </g>
           )}
         </svg>
@@ -265,7 +349,8 @@ export function WindProfileChart({ route, plan }: Props): JSX.Element {
       <p className="chart-note">
         The profile is painted with the wind at the hour you'll pass each point — gold pushes you
         along, red pushes back, deeper colour is stronger. The strip below is the same thing in
-        km/h. Diamonds are checkpoints; shaded bands are after dark.
+        km/h. Amber bars are checkpoints, blue are water points — click one to jump to it below;
+        shaded bands are after dark.
       </p>
     </div>
   );

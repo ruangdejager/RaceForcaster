@@ -1,8 +1,14 @@
 import type { RacePlan, Route } from '@raceforecaster/core';
 import { useMemo } from 'react';
 import { clock, km } from '../format.js';
-import { areaPath, INK, linearScale, linePath } from './charts/plot.js';
+import { areaPath, barPath, INK, linearScale, linePath, scrollToCheckpoint, SERIES } from './charts/plot.js';
 import { useCrosshair } from './charts/useCrosshair.js';
+
+/** How close the pointer has to be to a checkpoint's marker, in viewBox
+ *  pixels, before the crosshair locks onto it instead of the terrain. */
+const SNAP_PX = 14;
+const CP_BAR_W = 7;
+const CP_BAR_H = 16;
 
 interface Props {
   route: Route;
@@ -72,15 +78,34 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
   }));
 
   const checkpoints = plan.checkpoints.map((c) => ({
+    id: c.checkpoint.id,
     x: x(c.checkpoint.dist),
     y: y(c.checkpoint.ele),
     name: c.checkpoint.name,
     dist: c.checkpoint.dist,
+    isWater: c.checkpoint.kind === 'water',
   }));
 
   const hoverXs = useMemo(() => plan.samples.map((s) => x(s.dist)), [plan.samples, x]);
-  const { svgRef, index, handlers } = useCrosshair(hoverXs);
+  const { svgRef, index, x: pointerX, handlers } = useCrosshair(hoverXs);
   const hovered = index !== null ? plan.samples[index] : null;
+
+  // The nearest checkpoint marker, if the pointer is close enough to lock
+  // onto it — checkpoints don't line up with the hourly sample series, so
+  // this is hit-tested separately against the continuous pointer position.
+  const snapped = useMemo(() => {
+    if (pointerX === null) return null;
+    let best: (typeof checkpoints)[number] | null = null;
+    let bestDelta = SNAP_PX;
+    for (const cp of checkpoints) {
+      const delta = Math.abs(cp.x - pointerX);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = cp;
+      }
+    }
+    return best;
+  }, [pointerX, checkpoints]);
 
   return (
     <figure style={{ margin: 0 }}>
@@ -90,7 +115,14 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
           viewBox={`0 0 ${W} ${H}`}
           role="img"
           aria-label={`Elevation profile: ${km(route.totalDistance)} kilometres, ${Math.round(route.totalAscent)} metres of climbing`}
-          style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'pan-y' }}
+          style={{
+            display: 'block',
+            width: '100%',
+            height: 'auto',
+            touchAction: 'pan-y',
+            cursor: snapped ? 'pointer' : undefined,
+          }}
+          onClick={() => snapped && scrollToCheckpoint(snapped.id)}
           {...handlers}
         >
           {darkBands.map((band) => (
@@ -128,22 +160,50 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
             />
           ))}
 
-          {/* Checkpoints: a dot on the profile plus a full-height hairline. */}
-          {checkpoints.map((cp) => (
-            <g key={cp.name}>
-              <line
-                x1={cp.x}
-                y1={PAD.top}
-                x2={cp.x}
-                y2={baseline}
-                stroke={INK.label}
-                strokeWidth={1}
-                opacity={0.3}
-              />
-              <circle cx={cp.x} cy={cp.y} r={4} fill={INK.surface} />
-              <circle cx={cp.x} cy={cp.y} r={2.6} fill={INK.accent} />
-            </g>
-          ))}
+          {/*
+            Checkpoints: a full-height hairline plus a small "candle" bar
+            standing on the profile at the checkpoint's own elevation —
+            amber for a checkpoint, blue for a water point, so the two read
+            apart without needing the label. Clicking or activating one
+            (keyboard-focusable) jumps straight to its card in the timeline.
+          */}
+          {checkpoints.map((cp) => {
+            const color = cp.isWater ? SERIES.secondary : INK.accent;
+            return (
+              <g
+                key={cp.id}
+                tabIndex={0}
+                role="button"
+                aria-label={`Jump to ${cp.name} in the timeline`}
+                onClick={() => scrollToCheckpoint(cp.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    scrollToCheckpoint(cp.id);
+                  }
+                }}
+                style={{ cursor: 'pointer', outline: 'none' }}
+              >
+                <line
+                  x1={cp.x}
+                  y1={PAD.top}
+                  x2={cp.x}
+                  y2={baseline}
+                  stroke={INK.label}
+                  strokeWidth={1}
+                  opacity={0.3}
+                />
+                {/* Generous invisible hit area — the bar itself is deliberately slim. */}
+                <rect x={cp.x - 12} y={PAD.top} width={24} height={baseline - PAD.top} fill="transparent" />
+                <path
+                  d={barPath(cp.x - CP_BAR_W / 2, cp.y - CP_BAR_H, CP_BAR_W, CP_BAR_H, 3)}
+                  fill={color}
+                  stroke={INK.surface}
+                  strokeWidth={1.2}
+                />
+              </g>
+            );
+          })}
 
           <line
             x1={PAD.left}
@@ -171,14 +231,19 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
           {hovered && (
             <g pointerEvents="none">
               <line
-                x1={x(hovered.dist)}
+                x1={snapped ? snapped.x : x(hovered.dist)}
                 y1={PAD.top}
-                x2={x(hovered.dist)}
+                x2={snapped ? snapped.x : x(hovered.dist)}
                 y2={baseline}
                 stroke={INK.accent}
                 strokeWidth={1}
               />
-              <circle cx={x(hovered.dist)} cy={y(hovered.ele)} r={4} fill={INK.accent} />
+              <circle
+                cx={snapped ? snapped.x : x(hovered.dist)}
+                cy={snapped ? snapped.y : y(hovered.ele)}
+                r={4}
+                fill={snapped ? (snapped.isWater ? SERIES.secondary : INK.accent) : INK.accent}
+              />
 
               {/*
                 A floating readout right on the point, not just in the
@@ -186,14 +251,17 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
                 literally: the number should sit where the cursor is, not
                 somewhere the eye has to jump to find it. Flips to the left
                 of the cursor past the chart's midpoint so it never runs off
-                the right edge.
+                the right edge. Once the pointer is close enough to a
+                checkpoint, this swaps to naming it — that's the "you're
+                about to click this" confirmation for the snap.
               */}
               {(() => {
-                const px = x(hovered.dist);
+                const px = snapped ? snapped.x : x(hovered.dist);
+                const py = snapped ? snapped.y : y(hovered.ele);
                 const leftSide = px > W / 2;
-                const boxW = 108;
+                const boxW = snapped ? Math.min(220, 24 + snapped.name.length * 6.2) : 108;
                 const boxX = leftSide ? px - boxW - 10 : px + 10;
-                const boxY = Math.max(PAD.top, y(hovered.ele) - 34);
+                const boxY = Math.max(PAD.top, py - 34);
                 return (
                   <g>
                     <rect
@@ -207,12 +275,25 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
                       strokeWidth={1}
                       opacity={0.95}
                     />
-                    <text x={boxX + 8} y={boxY + 11} fill={INK.label} fontSize={9.5}>
-                      {km(hovered.dist, 1)} km · {Math.round(hovered.ele)} m
-                    </text>
-                    <text x={boxX + 8} y={boxY + 22} fill="#cdd6e0" fontSize={10} fontWeight={600}>
-                      {clock(plan.timezone, hovered.time)}
-                    </text>
+                    {snapped ? (
+                      <>
+                        <text x={boxX + 8} y={boxY + 11} fill={INK.label} fontSize={9.5}>
+                          {km(snapped.dist, 1)} km · click to view
+                        </text>
+                        <text x={boxX + 8} y={boxY + 22} fill="#cdd6e0" fontSize={10} fontWeight={600}>
+                          {snapped.name}
+                        </text>
+                      </>
+                    ) : (
+                      <>
+                        <text x={boxX + 8} y={boxY + 11} fill={INK.label} fontSize={9.5}>
+                          {km(hovered.dist, 1)} km · {Math.round(hovered.ele)} m
+                        </text>
+                        <text x={boxX + 8} y={boxY + 22} fill="#cdd6e0" fontSize={10} fontWeight={600}>
+                          {clock(plan.timezone, hovered.time)}
+                        </text>
+                      </>
+                    )}
                   </g>
                 );
               })()}
@@ -226,9 +307,12 @@ export function ElevationProfile({ route, plan }: Props): JSX.Element {
           <i className="swatch" style={{ background: INK.accent }} /> Elevation
         </span>
         <span>
-          <i className="swatch" style={{ background: INK.accent, opacity: 0.6 }} /> checkpoints
+          <i className="swatch" style={{ background: INK.accent }} /> checkpoint
         </span>
-        <span>hour marks move with your speed</span>
+        <span>
+          <i className="swatch" style={{ background: SERIES.secondary }} /> water point
+        </span>
+        <span>hour marks move with your speed · click a marker to jump to it</span>
         {plan.darkSegments.length > 0 && (
           <span>
             <i className="swatch" style={{ background: INK.night, opacity: 0.5 }} /> dark

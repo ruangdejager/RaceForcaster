@@ -1,5 +1,6 @@
 import { FACILITY_LABELS, type PlanCheckpoint } from '@raceforecaster/core';
 import { clock, km, kmh, sentenceCase, stopLabel, temp, windLabel } from '../format.js';
+import { checkpointAnchorId } from './charts/plot.js';
 import { WeatherIcon, weatherLabel } from './WeatherIcon.jsx';
 
 interface Props {
@@ -32,7 +33,7 @@ export function CheckpointCard({ entry, timezone, onStopAdjust, onRemove }: Prop
   };
 
   return (
-    <article className={`cp-card${cp.kind === 'water' ? ' cp-water' : ''}`}>
+    <article id={checkpointAnchorId(cp.id)} className={`cp-card${cp.kind === 'water' ? ' cp-water' : ''}`}>
       <header className="cp-head">
         <h3 className="cp-name">
           <span className="diamond" aria-hidden="true">
