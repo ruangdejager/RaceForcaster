@@ -112,9 +112,17 @@ export function loadShare(id: string): Promise<SharedPlan> {
 
 // --- Accounts --------------------------------------------------------------
 
+export type UserRole = 'user' | 'full' | 'admin';
+
+/** 'full' and 'admin' can upload routes and edit start time; only 'admin' manages other users. */
+export function canManageRoutes(role: UserRole | undefined): boolean {
+  return role === 'full' || role === 'admin';
+}
+
 export interface AuthUser {
   id: string;
   username: string;
+  role: UserRole;
 }
 
 export function signup(username: string, password: string): Promise<{ user: AuthUser }> {
@@ -179,4 +187,38 @@ export function deleteMyRoute(routeId: string): Promise<{ ok: true }> {
 
 export function fetchRoute(routeId: string): Promise<{ route: Route }> {
   return request(`/api/routes/${encodeURIComponent(routeId)}`);
+}
+
+/** The route the app lands on at "/" with no share link. */
+export function fetchDefaultRoute(): Promise<{ route: Route }> {
+  return request('/api/default-route');
+}
+
+// --- Admin -------------------------------------------------------------------
+
+export interface AdminUserRow {
+  id: string;
+  username: string;
+  role: UserRole;
+  createdAt: number;
+}
+
+export function fetchAdminUsers(): Promise<{ users: AdminUserRow[] }> {
+  return request('/api/admin/users');
+}
+
+export function setUserRole(userId: string, role: UserRole): Promise<{ ok: true }> {
+  return request(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  });
+}
+
+export function setDefaultRoute(routeId: string): Promise<{ ok: true }> {
+  return request('/api/admin/default-route', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ routeId }),
+  });
 }

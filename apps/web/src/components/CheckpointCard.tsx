@@ -6,13 +6,18 @@ interface Props {
   entry: PlanCheckpoint;
   timezone: string;
   onStopAdjust: (checkpointId: string, deltaMinutes: number) => void;
+  onRemove: (checkpointId: string) => void;
 }
 
 /** Stop time steps in fives — nobody plans a checkpoint to the minute. */
 const STEP_MINUTES = 5;
 
-export function CheckpointCard({ entry, timezone, onStopAdjust }: Props): JSX.Element {
+export function CheckpointCard({ entry, timezone, onStopAdjust, onRemove }: Props): JSX.Element {
   const { checkpoint: cp, weather } = entry;
+  // Only ever true for a checkpoint someone added themselves, in this
+  // browser, right now — real ones from the route file never get this id
+  // shape, so there's no way to remove something the route actually defines.
+  const isRemovable = cp.id.startsWith('cp-manual-');
 
   // The note is the organiser's own wording, and the facility tags were
   // inferred from it — so showing both prints the same list twice ("Food,
@@ -37,6 +42,17 @@ export function CheckpointCard({ entry, timezone, onStopAdjust }: Props): JSX.El
         </h3>
         <span className="cp-position">
           {km(cp.dist)} km · {Math.round(cp.ele)} m
+          {isRemovable && (
+            <button
+              type="button"
+              className="cp-remove"
+              onClick={() => onRemove(cp.id)}
+              aria-label={`Remove ${cp.name}`}
+              title="Remove this checkpoint"
+            >
+              ×
+            </button>
+          )}
         </span>
       </header>
 

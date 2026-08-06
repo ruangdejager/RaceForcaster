@@ -6,6 +6,7 @@ import { HourCard } from './HourCard.jsx';
 interface Props {
   plan: RacePlan;
   onStopAdjust: (checkpointId: string, deltaMinutes: number) => void;
+  onCheckpointRemove: (checkpointId: string) => void;
 }
 
 type Row =
@@ -20,7 +21,7 @@ type Row =
  * rider is asking is "what happens next", and the answer alternates between
  * the two kinds of row.
  */
-export function Timeline({ plan, onStopAdjust }: Props): JSX.Element {
+export function Timeline({ plan, onStopAdjust, onCheckpointRemove }: Props): JSX.Element {
   const rows: Row[] = [
     ...plan.hours.map((h, index): Row => ({ kind: 'hour', time: h.time, index })),
     ...plan.checkpoints.map((c, index): Row => ({ kind: 'checkpoint', time: c.arriveTime, index })),
@@ -54,6 +55,7 @@ export function Timeline({ plan, onStopAdjust }: Props): JSX.Element {
             entry={entry}
             timezone={plan.timezone}
             onStopAdjust={onStopAdjust}
+            onRemove={onCheckpointRemove}
           />
         );
       })}

@@ -1,11 +1,13 @@
 import {
   buildPlan,
+  checkpointAtDistance,
   datesSpanned,
   DEFAULT_RIDER,
   toLocalDateTimeInput,
   parseLocalDateTime,
   type ApparentTempMode,
   type Checkpoint,
+  type CheckpointKind,
   type PlanSettings,
   type RacePlan,
   type Route,
@@ -14,6 +16,7 @@ import {
 } from '@raceforecaster/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
+import { ApiError } from '../api.js';
 
 export type PlannerStatus = 'empty' | 'loading' | 'ready' | 'error';
 
@@ -110,6 +113,28 @@ export function usePlanner() {
       setStatus('error');
     }
   }, []);
+
+  /**
+   * The route the app lands on at "/" — everyone sees this first, privileged
+   * or not; "New route" (privileged only) is what lets someone move past it.
+   * A 404 here just means no admin has set one yet, which is a normal empty
+   * state to fall back to quietly, not something to show as an error.
+   */
+  const loadDefaultRoute = useCallback(async () => {
+    setStatus('loading');
+    setError(null);
+    try {
+      const result = await api.fetchDefaultRoute();
+      await loadRoute(result.route, []);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setStatus('empty');
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Could not load the default route.');
+      setStatus('error');
+    }
+  }, [loadRoute]);
 
   /** Open a route already known to the server, e.g. from "My routes". */
   const openRouteById = useCallback(
@@ -217,6 +242,38 @@ export function usePlanner() {
     });
   }, []);
 
+  /**
+   * Add a checkpoint or water point at a distance along the route.
+   *
+   * Open to every viewer, not just privileged accounts — this only ever
+   * touches the *local* settings snapshot (the same one speed and stop
+   * minutes already live in), never the route's own stored data, so there's
+   * nothing here for a plain viewer to damage. It rides along in a "Share"
+   * link the same way a stop-minute edit already does.
+   */
+  const addCheckpoint = useCallback(
+    (distanceKm: number, name: string, kind: Extract<CheckpointKind, 'checkpoint' | 'water'>) => {
+      if (!route) return;
+      const cp = checkpointAtDistance(route, distanceKm * 1000, name.trim() || 'Checkpoint');
+      if (!cp) return;
+      setSettings((current) => {
+        if (!current) return current;
+        const checkpoints = [...current.checkpoints, { ...cp, kind }].sort((a, b) => a.dist - b.dist);
+        return { ...current, checkpoints };
+      });
+    },
+    [route],
+  );
+
+  /** Only ever removes a manually-added stop — the route's own checkpoints aren't touched. */
+  const removeCheckpoint = useCallback((checkpointId: string) => {
+    if (!checkpointId.startsWith('cp-manual-')) return;
+    setSettings((current) => {
+      if (!current) return current;
+      return { ...current, checkpoints: current.checkpoints.filter((cp) => cp.id !== checkpointId) };
+    });
+  }, []);
+
   // --- Keep the sun data covering the race --------------------------------
   //
   // Moving the start date far enough can take the race onto days we never
@@ -270,6 +327,7 @@ export function usePlanner() {
   return {
     ...state,
     loadRoute,
+    loadDefaultRoute,
     openRouteById,
     uploadFile,
     openShare,
@@ -278,6 +336,8 @@ export function usePlanner() {
     setStartTime,
     setApparentMode,
     adjustStopMinutes,
+    addCheckpoint,
+    removeCheckpoint,
     share,
   };
 }

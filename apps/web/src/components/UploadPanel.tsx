@@ -3,10 +3,11 @@ import { useRef, useState } from 'react';
 interface Props {
   busy: boolean;
   onFile: (file: File) => void;
-  onSample: () => void;
 }
 
-export function UploadPanel({ busy, onFile, onSample }: Props): JSX.Element {
+/** Only ever shown to an account that can add routes — the default route
+ *  covers everyone else's landing experience now. */
+export function UploadPanel({ busy, onFile }: Props): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -58,13 +59,6 @@ export function UploadPanel({ busy, onFile, onSample }: Props): JSX.Element {
           'Choose a GPX or TCX file'
         )}
       </button>
-
-      <p className="upload-sample">
-        <span className="muted">or </span>
-        <button type="button" onClick={onSample} disabled={busy}>
-          try it with a sample 230 km route
-        </button>
-      </p>
     </div>
   );
 }

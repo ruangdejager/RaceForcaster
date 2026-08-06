@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { saveMyRoute, uploadRouteXml } from './api.js';
+import { canManageRoutes, saveMyRoute, setDefaultRoute } from './api.js';
+import { AddCheckpointForm } from './components/AddCheckpointForm.jsx';
+import { AdminPanel } from './components/AdminPanel.jsx';
 import { AuthModal } from './components/AuthModal.jsx';
 import { ControlBar } from './components/ControlBar.jsx';
 import { ElevationProfile } from './components/ElevationProfile.jsx';
@@ -14,7 +16,7 @@ import { km } from './format.js';
 import { useAuth } from './state/useAuth.js';
 import { usePlanner } from './state/usePlanner.js';
 
-/** `/s/<id>` is a shared plan; anything else is the blank slate. */
+/** `/s/<id>` is a shared plan; anything else lands on the site's default route. */
 function shareIdFromPath(): string | null {
   const match = /^\/s\/([\w-]+)\/?$/.exec(window.location.pathname);
   return match?.[1] ?? null;
@@ -24,37 +26,31 @@ export function App(): JSX.Element {
   const planner = usePlanner();
   const auth = useAuth();
   const [shareState, setShareState] = useState<'idle' | 'working' | 'copied' | 'failed'>('idle');
-  const [sampleError, setSampleError] = useState<string | null>(null);
   const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup' | null>(null);
   const [showMyRoutes, setShowMyRoutes] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'working' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [defaultState, setDefaultState] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
 
-  const { openShare, route } = planner;
+  const { openShare, loadDefaultRoute, route } = planner;
+  const canManage = canManageRoutes(auth.user?.role);
+
+  // A specific share link always wins; otherwise land on the site's default
+  // route — everyone sees the same starting point, privileged or not, and
+  // "New route" (below, privileged-only) is what lets someone move past it.
   useEffect(() => {
     const id = shareIdFromPath();
     if (id) void openShare(id);
-  }, [openShare]);
+    else void loadDefaultRoute();
+  }, [openShare, loadDefaultRoute]);
 
   // A fresh route means fresh warnings — don't carry a dismissal from the
   // last file over to a new one just because the wording happened to match.
   useEffect(() => {
     setDismissedWarnings(new Set());
   }, [route?.id]);
-
-  const loadSample = useCallback(async () => {
-    setSampleError(null);
-    try {
-      const response = await fetch('/samples/demo-230km.gpx');
-      if (!response.ok) throw new Error('The sample route is not available.');
-      const xml = await response.text();
-      const result = await uploadRouteXml(xml, 'Demo 230 km');
-      await planner.loadRoute(result.route, result.warnings);
-    } catch (err) {
-      setSampleError(err instanceof Error ? err.message : 'Could not load the sample route.');
-    }
-  }, [planner]);
 
   const handleSave = useCallback(async () => {
     if (!route) return;
@@ -74,6 +70,19 @@ export function App(): JSX.Element {
       setTimeout(() => setSaveState('idle'), 3200);
     }
   }, [route, auth.status]);
+
+  const handleSetDefault = useCallback(async () => {
+    if (!route) return;
+    setDefaultState('working');
+    try {
+      await setDefaultRoute(route.id);
+      setDefaultState('done');
+      setTimeout(() => setDefaultState('idle'), 2600);
+    } catch {
+      setDefaultState('error');
+      setTimeout(() => setDefaultState('idle'), 3200);
+    }
+  }, [route]);
 
   const handleShare = useCallback(async () => {
     setShareState('working');
@@ -126,7 +135,7 @@ export function App(): JSX.Element {
             {shareState === 'failed' && 'Copy failed'}
           </button>
         )}
-        {route && (
+        {route && canManage && (
           <button type="button" className="link-button" onClick={() => void handleSave()}>
             {saveState === 'working' && <span className="spinner" />}
             {saveState === 'idle' && 'Save'}
@@ -135,7 +144,16 @@ export function App(): JSX.Element {
             {saveState === 'error' && 'Save failed'}
           </button>
         )}
-        {route && (
+        {route && auth.user?.role === 'admin' && (
+          <button type="button" className="link-button" onClick={() => void handleSetDefault()}>
+            {defaultState === 'working' && <span className="spinner" />}
+            {defaultState === 'idle' && 'Set as default'}
+            {defaultState === 'working' && ' Setting…'}
+            {defaultState === 'done' && 'Default set'}
+            {defaultState === 'error' && 'Failed'}
+          </button>
+        )}
+        {route && canManage && (
           <button type="button" className="link-button" onClick={planner.reset}>
             New route
           </button>
@@ -144,9 +162,17 @@ export function App(): JSX.Element {
         <span className="site-head-account">
           {auth.status === 'authed' && auth.user && (
             <>
-              <button type="button" className="link-button" onClick={() => setShowMyRoutes(true)}>
-                {auth.user.username} · My routes
-              </button>
+              {auth.user.role === 'admin' && (
+                <button type="button" className="link-button" onClick={() => setShowAdmin(true)}>
+                  Admin
+                </button>
+              )}
+              {canManage && (
+                <button type="button" className="link-button" onClick={() => setShowMyRoutes(true)}>
+                  {auth.user.username} · My routes
+                </button>
+              )}
+              {!canManage && <span className="link-button" style={{ borderColor: 'transparent' }}>{auth.user.username}</span>}
               <button type="button" className="link-button" onClick={() => void auth.logout()}>
                 Log out
               </button>
@@ -160,11 +186,19 @@ export function App(): JSX.Element {
         </span>
       </header>
 
-      {!route && (
-        <UploadPanel busy={busy} onFile={(f) => void planner.uploadFile(f)} onSample={() => void loadSample()} />
+      {status === 'empty' && (
+        <>
+          {canManage ? (
+            <UploadPanel busy={busy} onFile={(f) => void planner.uploadFile(f)} />
+          ) : (
+            <p className="notice">
+              No default route has been set up yet. Log in with an account that can add routes to
+              upload one.
+            </p>
+          )}
+        </>
       )}
 
-      {sampleError && <p className="notice error">{sampleError}</p>}
       {error && <p className="notice error">{error}</p>}
       {saveError && <p className="notice error">{saveError}</p>}
       {visibleWarnings.map((w) => (
@@ -181,7 +215,7 @@ export function App(): JSX.Element {
         </p>
       ))}
 
-      {busy && route && (
+      {busy && (
         <p className="notice">
           <span className="spinner" /> Fetching the forecast along the route…
         </p>
@@ -192,6 +226,7 @@ export function App(): JSX.Element {
           settings={settings}
           plan={plan}
           timezone={route.timezone}
+          canEditStartTime={canManage}
           onSpeedChange={planner.setSpeed}
           onStartTimeChange={planner.setStartTime}
         />
@@ -211,11 +246,16 @@ export function App(): JSX.Element {
 
       {plan && <ForecastNotice plan={plan} />}
 
-      {plan && (
+      {plan && route && (
         <>
-          <Timeline plan={plan} onStopAdjust={planner.adjustStopMinutes} />
+          <AddCheckpointForm totalDistanceM={route.totalDistance} onAdd={planner.addCheckpoint} />
+          <Timeline
+            plan={plan}
+            onStopAdjust={planner.adjustStopMinutes}
+            onCheckpointRemove={planner.removeCheckpoint}
+          />
           <PlanCharts plan={plan} />
-          {route && weather && <StationList weather={weather} route={route} />}
+          {weather && <StationList weather={weather} route={route} />}
         </>
       )}
 
@@ -258,6 +298,10 @@ export function App(): JSX.Element {
           onOpenRoute={(id) => void planner.openRouteById(id)}
           onClose={() => setShowMyRoutes(false)}
         />
+      )}
+
+      {showAdmin && auth.user && (
+        <AdminPanel currentUserId={auth.user.id} onClose={() => setShowAdmin(false)} />
       )}
     </div>
   );

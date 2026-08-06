@@ -10,6 +10,9 @@ interface Props {
   settings: PlanSettings;
   plan: RacePlan | null;
   timezone: string;
+  /** Only an account that can add routes may move the start time — a plain
+   *  viewer still sees exactly what it's set to, just can't change it. */
+  canEditStartTime: boolean;
   onSpeedChange: (kmh: number) => void;
   onStartTimeChange: (epochMs: number) => void;
 }
@@ -30,6 +33,7 @@ export function ControlBar({
   settings,
   plan,
   timezone,
+  canEditStartTime,
   onSpeedChange,
   onStartTimeChange,
 }: Props): JSX.Element {
@@ -86,6 +90,8 @@ export function ControlBar({
             type="datetime-local"
             value={toLocalDateTimeInput(timezone, settings.startTime)}
             onChange={(e) => handleStart(e.target.value)}
+            disabled={!canEditStartTime}
+            title={canEditStartTime ? undefined : 'Log in with an account that can add routes to change this.'}
           />
         </div>
       </div>
