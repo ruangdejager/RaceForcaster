@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Config } from '../src/config.js';
 import { Store } from '../src/db/index.js';
 import type { MetClient } from '../src/met/client.js';
+import { createAdminApi } from '../src/routes/admin.js';
 import { createApi } from '../src/routes/api.js';
 import { createAuthApi } from '../src/routes/auth.js';
 import { MAX_SAVED_ROUTES, createMyRoutesApi } from '../src/routes/myRoutes.js';
@@ -31,6 +32,7 @@ function buildApp(store: Store): Hono {
   app.route('/api', createApi({ config, store, met }));
   app.route('/api/auth', createAuthApi({ store, cookieSecure: false }));
   app.route('/api/my/routes', createMyRoutesApi({ store }));
+  app.route('/api/admin', createAdminApi({ store }));
   return app;
 }
 
@@ -59,10 +61,25 @@ async function signup(app: Hono, username: string, password = 'a-fine-password')
   return sessionCookie(res);
 }
 
-async function uploadRoute(app: Hono): Promise<string> {
+/** A signed-up account promoted to the 'full' role, i.e. one that can add routes. */
+async function signupPrivileged(
+  app: Hono,
+  store: Store,
+  username: string,
+  password = 'a-fine-password',
+): Promise<string> {
+  const cookie = await signup(app, username, password);
+  const user = store.getUserByUsername(username);
+  if (!user) throw new Error(`Expected a user row for ${username}.`);
+  store.setUserRole(user.id, 'full');
+  return cookie;
+}
+
+/** Uploads as whichever account the cookie belongs to — must be 'full' or 'admin'. */
+async function uploadRoute(app: Hono, cookie: string): Promise<string> {
   const res = await app.request('/api/routes', {
     method: 'POST',
-    headers: { 'content-type': 'application/gpx+xml' },
+    headers: { 'content-type': 'application/gpx+xml', cookie },
     body: gpx(),
   });
   const body = (await res.json()) as { route: { id: string } };
@@ -138,7 +155,8 @@ describe('signup and login', () => {
 
 describe('saved routes', () => {
   it('requires login to save', async () => {
-    const routeId = await uploadRoute(app);
+    const uploader = await signupPrivileged(app, store, 'uploader');
+    const routeId = await uploadRoute(app, uploader);
     const res = await app.request('/api/my/routes', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -148,8 +166,8 @@ describe('saved routes', () => {
   });
 
   it('saves a route and lists it back', async () => {
-    const cookie = await signup(app, 'rider1');
-    const routeId = await uploadRoute(app);
+    const cookie = await signupPrivileged(app, store, 'rider1');
+    const routeId = await uploadRoute(app, cookie);
 
     const save = await app.request('/api/my/routes', {
       method: 'POST',
@@ -166,10 +184,10 @@ describe('saved routes', () => {
   });
 
   it(`stops at ${MAX_SAVED_ROUTES} saved routes`, async () => {
-    const cookie = await signup(app, 'rider1');
+    const cookie = await signupPrivileged(app, store, 'rider1');
 
     for (let i = 0; i < MAX_SAVED_ROUTES; i++) {
-      const routeId = await uploadRoute(app);
+      const routeId = await uploadRoute(app, cookie);
       const res = await app.request('/api/my/routes', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie },
@@ -178,7 +196,7 @@ describe('saved routes', () => {
       expect(res.status).toBe(201);
     }
 
-    const oneMore = await uploadRoute(app);
+    const oneMore = await uploadRoute(app, cookie);
     const blocked = await app.request('/api/my/routes', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -191,10 +209,10 @@ describe('saved routes', () => {
   });
 
   it('freeing a saved route opens a new slot', async () => {
-    const cookie = await signup(app, 'rider1');
+    const cookie = await signupPrivileged(app, store, 'rider1');
     const ids: string[] = [];
     for (let i = 0; i < MAX_SAVED_ROUTES; i++) {
-      const routeId = await uploadRoute(app);
+      const routeId = await uploadRoute(app, cookie);
       await app.request('/api/my/routes', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie },
@@ -206,7 +224,7 @@ describe('saved routes', () => {
     const first = ids[0];
     await app.request(`/api/my/routes/${first}`, { method: 'DELETE', headers: { cookie } });
 
-    const nextRoute = await uploadRoute(app);
+    const nextRoute = await uploadRoute(app, cookie);
     const res = await app.request('/api/my/routes', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -216,9 +234,9 @@ describe('saved routes', () => {
   });
 
   it("rejects saving someone else's already-claimed route", async () => {
-    const cookieA = await signup(app, 'rider-a');
-    const cookieB = await signup(app, 'rider-b');
-    const routeId = await uploadRoute(app);
+    const cookieA = await signupPrivileged(app, store, 'rider-a');
+    const cookieB = await signupPrivileged(app, store, 'rider-b');
+    const routeId = await uploadRoute(app, cookieA);
 
     await app.request('/api/my/routes', {
       method: 'POST',
@@ -237,14 +255,15 @@ describe('saved routes', () => {
 
 describe('route visibility', () => {
   it('a freshly uploaded route is publicly readable by anyone', async () => {
-    const routeId = await uploadRoute(app);
+    const uploader = await signupPrivileged(app, store, 'uploader');
+    const routeId = await uploadRoute(app, uploader);
     const res = await app.request(`/api/routes/${routeId}`);
     expect(res.status).toBe(200);
   });
 
   it('marking a saved route private blocks anonymous access', async () => {
-    const cookie = await signup(app, 'rider1');
-    const routeId = await uploadRoute(app);
+    const cookie = await signupPrivileged(app, store, 'rider1');
+    const routeId = await uploadRoute(app, cookie);
 
     await app.request('/api/my/routes', {
       method: 'POST',
@@ -260,9 +279,9 @@ describe('route visibility', () => {
   });
 
   it("a private route isn't readable by a different logged-in account either", async () => {
-    const cookieOwner = await signup(app, 'owner');
+    const cookieOwner = await signupPrivileged(app, store, 'owner');
     const cookieOther = await signup(app, 'someone-else');
-    const routeId = await uploadRoute(app);
+    const routeId = await uploadRoute(app, cookieOwner);
 
     await app.request('/api/my/routes', {
       method: 'POST',
@@ -275,8 +294,8 @@ describe('route visibility', () => {
   });
 
   it('toggling back to public restores anonymous access', async () => {
-    const cookie = await signup(app, 'rider1');
-    const routeId = await uploadRoute(app);
+    const cookie = await signupPrivileged(app, store, 'rider1');
+    const routeId = await uploadRoute(app, cookie);
 
     await app.request('/api/my/routes', {
       method: 'POST',
@@ -291,5 +310,179 @@ describe('route visibility', () => {
 
     const anon = await app.request(`/api/routes/${routeId}`);
     expect(anon.status).toBe(200);
+  });
+});
+
+describe('role gating on route upload', () => {
+  it('rejects an anonymous upload', async () => {
+    const res = await app.request('/api/routes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/gpx+xml' },
+      body: gpx(),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects a plain logged-in user', async () => {
+    const cookie = await signup(app, 'rider1');
+    const res = await app.request('/api/routes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/gpx+xml', cookie },
+      body: gpx(),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('allows a "full" role account', async () => {
+    const cookie = await signupPrivileged(app, store, 'rider1');
+    const res = await app.request('/api/routes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/gpx+xml', cookie },
+      body: gpx(),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('allows an admin account', async () => {
+    const cookie = await signup(app, 'rider1');
+    const user = store.getUserByUsername('rider1');
+    if (!user) throw new Error('Expected a user row.');
+    store.setUserRole(user.id, 'admin');
+
+    const res = await app.request('/api/routes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/gpx+xml', cookie },
+      body: gpx(),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('also gates claiming an already-uploaded route into "my routes"', async () => {
+    const uploader = await signupPrivileged(app, store, 'uploader');
+    const routeId = await uploadRoute(app, uploader);
+
+    const plain = await signup(app, 'rider1');
+    const res = await app.request('/api/my/routes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: plain },
+      body: JSON.stringify({ routeId }),
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('admin API', () => {
+  async function signupAdmin(username: string): Promise<string> {
+    const cookie = await signup(app, username);
+    const user = store.getUserByUsername(username);
+    if (!user) throw new Error('Expected a user row.');
+    store.setUserRole(user.id, 'admin');
+    return cookie;
+  }
+
+  it('rejects non-admins on every admin route', async () => {
+    const plain = await signup(app, 'rider1');
+    const full = await signupPrivileged(app, store, 'rider2');
+
+    for (const cookie of [plain, full]) {
+      const users = await app.request('/api/admin/users', { headers: { cookie } });
+      expect(users.status).toBe(403);
+    }
+
+    const anon = await app.request('/api/admin/users');
+    expect(anon.status).toBe(403);
+  });
+
+  it('lists users for an admin', async () => {
+    const admin = await signupAdmin('root');
+    await signup(app, 'rider1');
+
+    const res = await app.request('/api/admin/users', { headers: { cookie: admin } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { users: Array<{ username: string; role: string }> };
+    expect(body.users.map((u) => u.username).sort()).toEqual(['rider1', 'root']);
+  });
+
+  it("lets an admin change another user's role", async () => {
+    const admin = await signupAdmin('root');
+    const cookie = await signup(app, 'rider1');
+    const rider1 = store.getUserByUsername('rider1');
+    if (!rider1) throw new Error('Expected a user row.');
+
+    const res = await app.request(`/api/admin/users/${rider1.id}/role`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: admin },
+      body: JSON.stringify({ role: 'full' }),
+    });
+    expect(res.status).toBe(200);
+
+    const upload = await app.request('/api/routes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/gpx+xml', cookie },
+      body: gpx(),
+    });
+    expect(upload.status).toBe(200);
+  });
+
+  it('refuses to demote the last remaining admin', async () => {
+    const admin = await signupAdmin('root');
+    const self = store.getUserByUsername('root');
+    if (!self) throw new Error('Expected a user row.');
+
+    const res = await app.request(`/api/admin/users/${self.id}/role`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: admin },
+      body: JSON.stringify({ role: 'user' }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('rejects an invalid role value', async () => {
+    const admin = await signupAdmin('root');
+    const rider1 = await signup(app, 'rider1');
+    void rider1;
+    const target = store.getUserByUsername('rider1');
+    if (!target) throw new Error('Expected a user row.');
+
+    const res = await app.request(`/api/admin/users/${target.id}/role`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: admin },
+      body: JSON.stringify({ role: 'superadmin' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('lets an admin set the default route, and it becomes publicly fetchable', async () => {
+    const admin = await signupAdmin('root');
+    const routeId = await uploadRoute(app, admin);
+
+    const res = await app.request('/api/admin/default-route', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie: admin },
+      body: JSON.stringify({ routeId }),
+    });
+    expect(res.status).toBe(200);
+
+    const anon = await app.request('/api/default-route');
+    expect(anon.status).toBe(200);
+    const body = (await anon.json()) as { route: { id: string } };
+    expect(body.route.id).toBe(routeId);
+  });
+
+  it('rejects setting a default route that does not exist', async () => {
+    const admin = await signupAdmin('root');
+    const res = await app.request('/api/admin/default-route', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie: admin },
+      body: JSON.stringify({ routeId: 'not-a-real-id' }),
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('default route lookup', () => {
+  it('404s when no default route has been set', async () => {
+    const res = await app.request('/api/default-route');
+    expect(res.status).toBe(404);
   });
 });
