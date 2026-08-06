@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
@@ -9,9 +10,11 @@ import { logger } from 'hono/logger';
 import { loadConfig } from './config.js';
 import { Store } from './db/index.js';
 import { MetClient } from './met/client.js';
+import { createAdminApi } from './routes/admin.js';
 import { createApi } from './routes/api.js';
 import { createAuthApi } from './routes/auth.js';
 import { createMyRoutesApi } from './routes/myRoutes.js';
+import { seedDefaultRoute } from './services/seedDefaultRoute.js';
 
 const config = loadConfig();
 const store = new Store(config.dbPath);
@@ -20,6 +23,14 @@ const met = new MetClient({
   maxRps: config.metMaxRps,
   store,
 });
+
+// `../seed/...` resolves to `apps/api/seed/...` from either location this
+// module can run as: the real TS source under `apps/api/src/index.ts` in dev
+// (tsx runs it directly, unbundled), or the single bundled file at
+// `apps/api/dist/index.js` in production — both sit one level under
+// `apps/api/`, so the relative path is identical either way. See the
+// `node:sqlite` require comment in db/index.ts for why bundling matters here.
+seedDefaultRoute(store, fileURLToPath(new URL('../seed/trans-baviaans-2026.gpx', import.meta.url)));
 
 const app = new Hono();
 
@@ -37,6 +48,7 @@ const cookieSecure = config.publicBaseUrl.startsWith('https://');
 app.route('/api', createApi({ config, store, met }));
 app.route('/api/auth', createAuthApi({ store, cookieSecure }));
 app.route('/api/my/routes', createMyRoutesApi({ store }));
+app.route('/api/admin', createAdminApi({ store }));
 
 // --- Static hosting -------------------------------------------------------
 // In development Vite serves the front end and proxies /api here, so this only

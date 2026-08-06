@@ -26,6 +26,9 @@ ENV NODE_ENV=production \
 # here: no node_modules, no native module, no build toolchain in the image.
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
+# The seed GPX read at first boot to populate the site's default route — see
+# services/seedDefaultRoute.ts for the path resolution that finds it here.
+COPY --from=build /app/apps/api/seed ./apps/api/seed
 
 RUN mkdir -p /app/data
 
