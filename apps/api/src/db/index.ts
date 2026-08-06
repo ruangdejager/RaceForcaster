@@ -71,7 +71,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+
+-- Single-row-per-key store for site-wide config an admin can change, e.g.
+-- which route loads at "/". Not worth a dedicated table per setting for the
+-- one or two of these that exist.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key    TEXT PRIMARY KEY,
+  value  TEXT NOT NULL
+);
 `;
+
+export type UserRole = 'user' | 'full' | 'admin';
+
+/** 'full' and 'admin' can both upload routes and touch a route's start time; only 'admin' manages other users. */
+export function canManageRoutes(role: UserRole): boolean {
+  return role === 'full' || role === 'admin';
+}
 
 /**
  * Add columns an earlier version of the schema didn't have.
@@ -98,6 +113,49 @@ function migrateRoutesTable(db: DatabaseSyncType): void {
   db.exec('CREATE INDEX IF NOT EXISTS routes_owner ON routes(owner_id)');
 }
 
+/** Same forward-migration pattern as `migrateRoutesTable`, for the `role` column added when roles shipped. */
+function migrateUsersTable(db: DatabaseSyncType): void {
+  const columns = db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+  const have = new Set(columns.map((c) => c.name));
+
+  if (!have.has('role')) {
+    db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
+  }
+}
+
+/**
+ * Make sure the site's one hard-coded admin is actually an admin, every boot.
+ *
+ * There's no invite flow or first-run wizard for the very first admin — it
+ * has to come from somewhere — so this is that somewhere: idempotent (a
+ * no-op once it's already true), and it only ever grants, never revokes, so
+ * demoting this account later (from the admin panel, once there's a second
+ * admin to do the demoting) sticks instead of being silently undone on the
+ * next restart.
+ */
+const FOUNDING_ADMIN_USERNAME = 'ruandj';
+
+function bootstrapFoundingAdmin(db: DatabaseSyncType): void {
+  const user = db
+    .prepare('SELECT id, role FROM users WHERE username = ? COLLATE NOCASE')
+    .get(FOUNDING_ADMIN_USERNAME) as { id: string; role: string } | undefined;
+  if (!user || user.role === 'admin') return;
+
+  db.exec('BEGIN');
+  try {
+    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(user.id);
+    // A default route seeded before this account existed (e.g. the very
+    // first boot of a fresh database) is unowned — hand it to the founding
+    // admin now so it shows up in their My Routes instead of floating free.
+    db.prepare('UPDATE routes SET owner_id = ? WHERE owner_id IS NULL AND id = (SELECT value FROM app_settings WHERE key = ?)')
+      .run(user.id, 'default_route_id');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 export interface CachedResponse {
   body: string;
   expiresAt: number;
@@ -115,6 +173,7 @@ export interface UserRow {
   id: string;
   username: string;
   passwordHash: string;
+  role: UserRole;
   createdAt: number;
 }
 
@@ -144,6 +203,8 @@ export class Store {
     this.db.exec('PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
     migrateRoutesTable(this.db);
+    migrateUsersTable(this.db);
+    bootstrapFoundingAdmin(this.db);
   }
 
   close(): void {
@@ -240,30 +301,79 @@ export class Store {
 
   // --- Users ---------------------------------------------------------------
 
+  /** New accounts always start at 'user' — nobody signs themselves up as full/admin. */
   createUser(id: string, username: string, passwordHash: string): void {
     this.db
-      .prepare('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)')
+      .prepare("INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, 'user', ?)")
       .run(id, username, passwordHash, Date.now());
+  }
+
+  private static toUserRow(row: {
+    id: string;
+    username: string;
+    password_hash: string;
+    role: string;
+    created_at: number;
+  }): UserRow {
+    return {
+      id: row.id,
+      username: row.username,
+      passwordHash: row.password_hash,
+      role: row.role as UserRole,
+      createdAt: row.created_at,
+    };
   }
 
   getUserByUsername(username: string): UserRow | null {
     const row = this.db
-      .prepare('SELECT id, username, password_hash, created_at FROM users WHERE username = ? COLLATE NOCASE')
+      .prepare('SELECT id, username, password_hash, role, created_at FROM users WHERE username = ? COLLATE NOCASE')
       .get(username) as
-      | { id: string; username: string; password_hash: string; created_at: number }
+      | { id: string; username: string; password_hash: string; role: string; created_at: number }
       | undefined;
-    return row
-      ? { id: row.id, username: row.username, passwordHash: row.password_hash, createdAt: row.created_at }
-      : null;
+    return row ? Store.toUserRow(row) : null;
   }
 
   getUserById(id: string): UserRow | null {
     const row = this.db
-      .prepare('SELECT id, username, password_hash, created_at FROM users WHERE id = ?')
-      .get(id) as { id: string; username: string; password_hash: string; created_at: number } | undefined;
-    return row
-      ? { id: row.id, username: row.username, passwordHash: row.password_hash, createdAt: row.created_at }
-      : null;
+      .prepare('SELECT id, username, password_hash, role, created_at FROM users WHERE id = ?')
+      .get(id) as
+      | { id: string; username: string; password_hash: string; role: string; created_at: number }
+      | undefined;
+    return row ? Store.toUserRow(row) : null;
+  }
+
+  /** For the admin panel: every account and its current role, oldest first. */
+  listUsers(): Array<{ id: string; username: string; role: UserRole; createdAt: number }> {
+    const rows = this.db
+      .prepare('SELECT id, username, role, created_at FROM users ORDER BY created_at ASC')
+      .all() as Array<{ id: string; username: string; role: string; created_at: number }>;
+    return rows.map((r) => ({ id: r.id, username: r.username, role: r.role as UserRole, createdAt: r.created_at }));
+  }
+
+  setUserRole(userId: string, role: UserRole): void {
+    this.db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+  }
+
+  countAdmins(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get() as {
+      n: number;
+    };
+    return row.n;
+  }
+
+  // --- App settings ----------------------------------------------------------
+
+  getSetting(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined;
+    return row?.value ?? null;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db
+      .prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, value);
   }
 
   // --- Sessions --------------------------------------------------------------

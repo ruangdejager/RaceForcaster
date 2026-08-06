@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { currentUserId, endSession, startSession } from '../auth/session.js';
-import type { Store } from '../db/index.js';
+import type { Store, UserRole } from '../db/index.js';
 
 export interface AuthDeps {
   store: Store;
@@ -13,8 +13,9 @@ export interface AuthDeps {
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 8;
 
-function publicUser(username: string, id: string): { id: string; username: string } {
-  return { id, username };
+/** Role travels with every auth response so the client can gate upload/admin UI without a second round trip. */
+function publicUser(username: string, id: string, role: UserRole): { id: string; username: string; role: UserRole } {
+  return { id, username, role };
 }
 
 export function createAuthApi(deps: AuthDeps): Hono {
@@ -43,7 +44,7 @@ export function createAuthApi(deps: AuthDeps): Hono {
     deps.store.createUser(id, username, passwordHash);
 
     startSession(c, deps.store, id, deps.cookieSecure);
-    return c.json({ user: publicUser(username, id) }, 201);
+    return c.json({ user: publicUser(username, id, 'user') }, 201);
   });
 
   auth.post('/login', async (c) => {
@@ -67,7 +68,7 @@ export function createAuthApi(deps: AuthDeps): Hono {
     }
 
     startSession(c, deps.store, user.id, deps.cookieSecure);
-    return c.json({ user: publicUser(user.username, user.id) });
+    return c.json({ user: publicUser(user.username, user.id, user.role) });
   });
 
   auth.post('/logout', (c) => {
@@ -80,7 +81,7 @@ export function createAuthApi(deps: AuthDeps): Hono {
     if (!userId) return c.json({ user: null });
     const user = deps.store.getUserById(userId);
     if (!user) return c.json({ user: null });
-    return c.json({ user: publicUser(user.username, user.id) });
+    return c.json({ user: publicUser(user.username, user.id, user.role) });
   });
 
   return auth;

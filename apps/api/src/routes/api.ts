@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import { currentUserId } from '../auth/session.js';
 import { MAX_UPLOAD_BYTES, type Config } from '../config.js';
-import type { Store } from '../db/index.js';
+import { canManageRoutes, type Store } from '../db/index.js';
 import { MetError, type MetClient } from '../met/client.js';
 import { computePlan } from '../services/planner.js';
 import { parsePlanSettings, ValidationError } from './validate.js';
@@ -60,6 +60,17 @@ export function createApi(deps: ApiDeps): Hono {
 
   api.post('/routes', async (c) => {
     try {
+      // Uploading is the one thing that actually creates and persists data,
+      // so it's the one thing gated server-side rather than just hidden in
+      // the UI — the rest of the viewer/full-access distinction (start time,
+      // "New route") is enforced client-side for now, since nothing else
+      // here mutates shared state or costs real money yet.
+      const userId = currentUserId(c, deps.store);
+      const role = userId ? deps.store.getUserById(userId)?.role : undefined;
+      if (!role || !canManageRoutes(role)) {
+        return c.json({ error: 'Log in with an account that can add routes to do that.' }, 403);
+      }
+
       const contentType = c.req.header('content-type') ?? '';
       let xml: string;
       let filename: string | undefined;
@@ -106,6 +117,19 @@ export function createApi(deps: ApiDeps): Hono {
       const { status, message } = toHttpError(err);
       return c.json({ error: message }, status);
     }
+  });
+
+  // The route the app loads for anyone landing on "/" with no share link —
+  // always public regardless of the underlying route's own visibility flag,
+  // since the entire point of a default is that everyone sees it.
+  api.get('/default-route', (c) => {
+    const routeId = deps.store.getSetting('default_route_id');
+    if (!routeId) return c.json({ error: 'No default route is set yet.' }, 404);
+
+    const json = deps.store.getRoute(routeId);
+    if (!json) return c.json({ error: 'No default route is set yet.' }, 404);
+
+    return c.json({ route: JSON.parse(json) as Route });
   });
 
   // --- Plan computation ----------------------------------------------------

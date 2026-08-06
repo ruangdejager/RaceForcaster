@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { currentUserId } from '../auth/session.js';
-import type { SavedRouteRow, Store } from '../db/index.js';
+import { canManageRoutes, type SavedRouteRow, type Store } from '../db/index.js';
 
 export interface MyRoutesDeps {
   store: Store;
@@ -40,6 +40,16 @@ export function createMyRoutesApi(deps: MyRoutesDeps): Hono<Env> {
 
   api.post('/', async (c) => {
     const userId = c.get('userId');
+
+    // Claiming a route into an account is the same category of action as
+    // uploading one in the first place — it consumes one of the 5 slots and
+    // grants ongoing control (visibility, rename, release) — so it's gated
+    // the same way, not left as a back door around the upload check.
+    const role = deps.store.getUserById(userId)?.role;
+    if (!role || !canManageRoutes(role)) {
+      return c.json({ error: 'Log in with an account that can add routes to do that.' }, 403);
+    }
+
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const routeId = typeof body['routeId'] === 'string' ? body['routeId'] : '';
     if (!routeId) return c.json({ error: 'routeId is required.' }, 400);
